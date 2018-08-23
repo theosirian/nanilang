@@ -1,0 +1,11 @@
+[package]
+name = "nanilang"
+version = "0.1.0"
+authors = ["Tiago Nascimento <tiago@theosirian.com>"]
+
+[build-dependencies]
+lalrpop = "0.15.2"
+
+[dependencies]
+lalrpop-util = "0.15.2"
+regex = "0.2.1"
