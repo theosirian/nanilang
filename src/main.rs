@@ -9,11 +9,26 @@ fn main() {
         .unwrap();
     println!("{:?}", expr);
     let expr = calculator::ExprParser::new()
-        .parse("12 == true ? 0 : 1 + 2")
+        .parse("12 == true ? __testing : 1 + 2")
         .unwrap();
     println!("{:?}", expr);
     let expr = calculator::ExprParser::new()
-        .parse("12 == true ? (13 == false ? 0 : 1) : 1 + 2")
+        .parse("12 == true ? (13 == hello ? 0 : 1) : 1 + 2")
+        .unwrap();
+    println!("{:?}", expr);
+
+    let expr = calculator::DeclParser::new().parse("let x: bool;").unwrap();
+    println!("{:?}", expr);
+    let expr = calculator::DeclParser::new()
+        .parse("let x, y: str;")
+        .unwrap();
+    println!("{:?}", expr);
+    let expr = calculator::DeclParser::new()
+        .parse("let x, y = true: bool;")
+        .unwrap();
+    println!("{:?}", expr);
+    let expr = calculator::DeclParser::new()
+        .parse("let x, y = 0 + x, z = 2: int;")
         .unwrap();
     println!("{:?}", expr);
 }

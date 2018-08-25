@@ -1,6 +1,7 @@
 #[derive(Debug)]
 pub enum Expr {
     Number(i32),
+    Id(String),
     True,
     False,
     Op(Box<Expr>, Opcode, Box<Expr>),
@@ -35,9 +36,15 @@ pub enum Opcode {
     Or,
 }
 
+#[derive(Debug, Clone)]
 pub enum Type {
     Int,
     Bool,
     Str,
-    Array,
+}
+
+#[derive(Debug)]
+pub enum Decl {
+    Single(String, Type, Option<Box<Expr>>),
+    Array(String, Type, i32, Option<Vec<Box<Expr>>>),
 }

@@ -1,85 +1,88 @@
 use std::str::FromStr;
-use ast::{Expr, Opcode};
+use ast::{Expr, Opcode, Type, Decl};
 
 grammar;
 
 match {
-   "bool" => BOOL,
-   "def" => DEF,
-   "else" => ELSE,
-   "false" => FALSE,
-   "for" => FOR,
-   "if" => IF,
-   "int" => INT,
-   "let" => LET,
-   "read" => READ,
-   "return" => RETURN,
-   "skip" => SKIP,
-   "stop" => STOP,
-   "str" => STR,
-   "true" => TRUE,
-   "while" => WHILE,
-   "write" => WRITE,
+    "bool" => BOOL,
+    "def" => DEF,
+    "else" => ELSE,
+    "false" => FALSE,
+    "for" => FOR,
+    "if" => IF,
+    "int" => INT,
+    "let" => LET,
+    "read" => READ,
+    "return" => RETURN,
+    "skip" => SKIP,
+    "stop" => STOP,
+    "str" => STR,
+    "true" => TRUE,
+    "while" => WHILE,
+    "write" => WRITE,
 } else {
-   _
+    _
 }
 
 Tier<Op, Next>: Box<Expr> = {
-   Tier<Op, Next> Op Next => Box::new(Expr::Op(<>)),
-   Next,
+    Tier<Op, Next> Op Next => Box::new(Expr::Op(<>)),
+    Next,
 };
 
 Num: i32 = {
-   r"[0-9]+" => i32::from_str(<>).unwrap(),
+    r"[0-9]+" => i32::from_str(<>).unwrap(),
 };
 
+Id: String = r"[a-zA-Z_][a-zA-Z0-9_]*" => String::from(<>);
+
 Term: Box<Expr> = {
-   TRUE => Box::new(Expr::True),
-   FALSE => Box::new(Expr::False),
-   Num => Box::new(Expr::Number(<>)),
-   "(" <Expr> ")",
+    TRUE => Box::new(Expr::True),
+    FALSE => Box::new(Expr::False),
+    Num => Box::new(Expr::Number(<>)),
+    Id => Box::new(Expr::Id(<>)),
+    "(" <Expr> ")",
 };
 
 NegativeOp: Opcode = "-" => Opcode::Negative;
 Negative: Box<Expr> = {
-   NegativeOp Term => Box::new(Expr::Right(<>)),
-   Term,
+    NegativeOp Term => Box::new(Expr::Right(<>)),
+    Term,
 };
 
 NotOp: Opcode = "!" => Opcode::Not;
 Not: Box<Expr> = {
-   NotOp Negative=> Box::new(Expr::Right(<>)),
-   Negative,
+    NotOp Negative=> Box::new(Expr::Right(<>)),
+    Negative,
 };
 
 FactorOp: Opcode = {
-   "*" => Opcode::Mul,
-   "/" => Opcode::Div,
-   "%" => Opcode::Mod,
+    "*" => Opcode::Mul,
+    "/" => Opcode::Div,
+    "%" => Opcode::Mod,
 };
 Factor = Tier<FactorOp, Not>;
 
 LinearOp: Opcode = {
-   "+" => Opcode::Add,
-   "-" => Opcode::Sub,
+    "+" => Opcode::Add,
+    "-" => Opcode::Sub,
 };
 Linear = Tier<LinearOp, Factor>;
 
 LesserOp: Opcode = {
-   "<=" => Opcode::LesserOrEqual,
-   "<" => Opcode::Lesser,
+    "<=" => Opcode::LesserOrEqual,
+    "<" => Opcode::Lesser,
 };
 Lesser = Tier<LesserOp, Linear>;
 
 GreaterOp: Opcode = {
-   ">=" => Opcode::GreaterOrEqual,
-   ">" => Opcode::Greater,
+    ">=" => Opcode::GreaterOrEqual,
+    ">" => Opcode::Greater,
 };
 Greater = Tier<GreaterOp, Lesser>;
 
 EqualityOp: Opcode = {
-   "==" => Opcode::Equal,
-   "!=" => Opcode::Different,
+    "==" => Opcode::Equal,
+    "!=" => Opcode::Different,
 }
 Equality = Tier<EqualityOp, Greater>;
 
@@ -90,8 +93,41 @@ OrOp: Opcode = "||" => Opcode::Or;
 Or = Tier<OrOp, And>;
 
 Ternary: Box<Expr> = {
-   <Or> "?" <Or> ":" <Expr> => Box::new(Expr::Ternary(<>)),
-   Or,
+    <Or> "?" <Or> ":" <Expr> => Box::new(Expr::Ternary(<>)),
+    Or,
 };
 
 pub Expr = Ternary;
+
+Type: Type = {
+    INT => Type::Int,
+    BOOL => Type::Bool,
+    STR => Type::Str,
+};
+
+Comma<T>: Vec<T> = {
+    <v:(<T> ",")*> <e:T> => {
+        let mut v = v;
+        v.push(e);
+        v
+    }
+};
+
+Attr: (String, Box<Expr>) = {
+    <Id> "=" <Expr>,
+};
+
+AttrOrId: (String, Option<Box<Expr>>) = {
+    <a:Attr> => (a.0, Some(a.1)),
+    <Id> => (<>, None),
+};
+
+DeclList = Comma<AttrOrId>;
+
+pub Decl: Vec<Decl> = LET <d:DeclList> ":" <t:Type> ";" => {
+    let mut f = Vec::new();
+    for i in d {
+        f.push(Decl::Single(i.0, t.clone(), i.1));
+    }
+    f
+};
