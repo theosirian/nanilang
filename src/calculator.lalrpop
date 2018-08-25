@@ -3,31 +3,95 @@ use ast::{Expr, Opcode};
 
 grammar;
 
-pub Expr: Box<Expr> = {
-    Expr ExprOp Factor => Box::new(Expr::Op(<>)),
-    Factor,
-};
-
-ExprOp: Opcode = {
-    "+" => Opcode::Add,
-    "-" => Opcode::Sub,
+match {
+   "bool" => BOOL,
+   "def" => DEF,
+   "else" => ELSE,
+   "false" => FALSE,
+   "for" => FOR,
+   "if" => IF,
+   "int" => INT,
+   "let" => LET,
+   "read" => READ,
+   "return" => RETURN,
+   "skip" => SKIP,
+   "stop" => STOP,
+   "str" => STR,
+   "true" => TRUE,
+   "while" => WHILE,
+   "write" => WRITE,
+} else {
+   _
 }
 
-Factor: Box<Expr> = {
-    Factor FactorOp Term => Box::new(Expr::Op(<>)),
-    Term,
-};
-
-FactorOp: Opcode = {
-    "*" => Opcode::Mul,
-    "/" => Opcode::Div,
-}
-
-Term: Box<Expr> = {
-    Num => Box::new(Expr::Number(<>)),
-    "(" <Expr> ")",
+Tier<Op, Next>: Box<Expr> = {
+   Tier<Op, Next> Op Next => Box::new(Expr::Op(<>)),
+   Next,
 };
 
 Num: i32 = {
-    r"[0-9]+" => i32::from_str(<>).unwrap(),
+   r"[0-9]+" => i32::from_str(<>).unwrap(),
+};
+
+Term: Box<Expr> = {
+   TRUE => Box::new(Expr::True),
+   FALSE => Box::new(Expr::False),
+   Num => Box::new(Expr::Number(<>)),
+   "(" <Expr> ")",
+};
+
+NegativeOp: Opcode = "-" => Opcode::Negative;
+Negative: Box<Expr> = {
+   NegativeOp Term => Box::new(Expr::Right(<>)),
+   Term,
+};
+
+NotOp: Opcode = "!" => Opcode::Not;
+Not: Box<Expr> = {
+   NotOp Negative=> Box::new(Expr::Right(<>)),
+   Negative,
+};
+
+FactorOp: Opcode = {
+   "*" => Opcode::Mul,
+   "/" => Opcode::Div,
+   "%" => Opcode::Mod,
+};
+Factor = Tier<FactorOp, Not>;
+
+LinearOp: Opcode = {
+   "+" => Opcode::Add,
+   "-" => Opcode::Sub,
+};
+Linear = Tier<LinearOp, Factor>;
+
+LesserOp: Opcode = {
+   "<=" => Opcode::LesserOrEqual,
+   "<" => Opcode::Lesser,
+};
+Lesser = Tier<LesserOp, Linear>;
+
+GreaterOp: Opcode = {
+   ">=" => Opcode::GreaterOrEqual,
+   ">" => Opcode::Greater,
+};
+Greater = Tier<GreaterOp, Lesser>;
+
+EqualityOp: Opcode = {
+   "==" => Opcode::Equal,
+   "!=" => Opcode::Different,
 }
+Equality = Tier<EqualityOp, Greater>;
+
+AndOp: Opcode = "&&" => Opcode::And;
+And = Tier<AndOp, Equality>;
+
+OrOp: Opcode = "||" => Opcode::Or;
+Or = Tier<OrOp, And>;
+
+Ternary: Box<Expr> = {
+   <Or> "?" <Or> ":" <Expr> => Box::new(Expr::Ternary(<>)),
+   Or,
+};
+
+pub Expr = Ternary;
