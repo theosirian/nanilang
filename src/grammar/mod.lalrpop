@@ -1,5 +1,5 @@
 use std::str::FromStr;
-use ast::{Expr, Opcode, Type, Decl};
+use ast::{Variable, Either, Block, Stmt, Expr, Opcode, Type, Decl};
 
 grammar;
 
@@ -30,6 +30,11 @@ Num: i32 = {
 
 Id: String = r"[a-zA-Z_][a-zA-Z0-9_]*" => String::from(<>);
 
+Var: Variable = {
+    <Id> "[" <Num> "]" => Variable::Array(<>),
+    <Id> => Variable::Id(<>),
+};
+
 Tier<Op, Next>: Box<Expr> = {
     Tier<Op, Next> Op Next => Box::new(Expr::Op(<>)),
     Next,
@@ -47,7 +52,7 @@ Term: Box<Expr> = {
     TRUE => Box::new(Expr::True),
     FALSE => Box::new(Expr::False),
     Num => Box::new(Expr::Number(<>)),
-    Id => Box::new(Expr::Id(<>)),
+    Var => Box::new(Expr::Variable(<>)),
     "(" <Expr> ")",
 };
 
@@ -113,21 +118,87 @@ Type: Type = {
     STR => Type::Str,
 };
 
-Attr: (String, Box<Expr>) = {
-    <Id> "=" <Expr>,
+ArrayDecl: (String, i32, Option<Vec<Box<Expr>>>) = {
+    <a:Id> "[" <n:Num> "]" "=" "{" <f:Comma<Expr>> "}" => (a, n, Some(f)),
+    <a:Id> "[" <n:Num> "]" => (a, n, None),
 };
 
-AttrOrId: (String, Option<Box<Expr>>) = {
-    <a:Attr> => (a.0, Some(a.1)),
+SingleDecl: (String, Option<Box<Expr>>) = {
+    <i:Id> "=" <e:Expr> => (i, Some(e)),
     <Id> => (<>, None),
 };
 
-DeclList = Comma<AttrOrId>;
+Either<T, U>: (Option<T>, Option<U>) = {
+    <T> => (Some(<>), None),
+    <U> => (None, Some(<>)),
+}
 
-pub Decl: Vec<Decl> = LET <d:DeclList> ":" <t:Type> ";" => {
-    let mut f = Vec::new();
-    for i in d {
-        f.push(Decl::Single(i.0, t.clone(), i.1));
-    }
-    f
+DeclList = Comma<Either<SingleDecl, ArrayDecl>>;
+
+pub Decl: Vec<Decl> = {
+    <l:(LET <DeclList> ":" <Type> ";")+> => {
+        let mut f = Vec::new();
+        for x in l {
+            let d = x.0;
+            let t = x.1;
+            for i in d {
+                if let Some(j) = i.0 {
+                    f.push(Decl::Single(j.0, t.clone(), j.1));
+                } else if let Some(j) = i.1 {
+                    f.push(Decl::Array(j.0, t.clone(), j.1, j.2));
+                }
+            }
+        }
+        f
+    },
 };
+
+Attr<O>: (Variable, Box<Expr>)  = {
+    <v:Var> <o:O> <e:Expr> => (v.clone(), Box::new(Expr::Op(Box::new(Expr::Variable(v)), o, e))),
+};
+
+AddEqual: Opcode = "+=" => Opcode::Add;
+SubEqual: Opcode = "-=" => Opcode::Add;
+MulEqual: Opcode = "*=" => Opcode::Add;
+DivEqual: Opcode = "/=" => Opcode::Add;
+ModEqual: Opcode = "%=" => Opcode::Add;
+
+AllAttr: Stmt = {
+    <v:Var> "=" <e:Expr> => Stmt::Attr(v, e),
+    <a:Attr<AddEqual>> => Stmt::Attr(a.0, a.1),
+    <a:Attr<SubEqual>> => Stmt::Attr(a.0, a.1),
+    <a:Attr<MulEqual>> => Stmt::Attr(a.0, a.1),
+    <a:Attr<DivEqual>> => Stmt::Attr(a.0, a.1),
+    <a:Attr<ModEqual>> => Stmt::Attr(a.0, a.1),
+};
+
+Stmt: Stmt = {
+    <AllAttr> ";" => <>,
+
+    SKIP ";" => Stmt::Skip,
+    STOP ";" => Stmt::Stop,
+    RETURN <Expr?> ";" => Stmt::Return(<>),
+
+    READ <v:Var> ";" => Stmt::Read(<>),
+    WRITE <Comma<Expr>> ";" => Stmt::Write(<>),
+
+    <Id> "(" <Comma<Expr>?> ")" ";" => Stmt::Call(<>),
+
+    IF "(" <Expr> ")" <Block> <(ELSE IF "(" <Expr> ")" <Block>)*> <(ELSE <Block>)?> => Stmt::If(<>),
+
+    WHILE "(" <Expr> ")" <Block> => Stmt::While(<>),
+
+    FOR "(" <i:AllAttr> ";" <e:Expr> ";" <s:AllAttr> ")" <b:Block> => Stmt::For(Box::new(i), e, Box::new(s), b),
+};
+
+pub Commands: Vec<Either<Stmt, Block>> = {
+    <s:Stmt+> => {
+        let mut c = Vec::new();
+        for i in s {
+            c.push(Either::Left(i));
+        }
+        c
+    },
+};
+
+pub Block: Block = "{" <Decl?> <Commands?> "}" => Block::new(<>);
