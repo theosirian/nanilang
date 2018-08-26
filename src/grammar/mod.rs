@@ -1,5 +1,5 @@
 // auto-generated: "lalrpop 0.15.2"
-// sha256: e0d23e9ad33cf17b92416948156f6df3c0bd7d128e8f57979b5af41a06060f9
+// sha256: 6e574f95fa6195ee6f2c9bfbf53c6d6b93bece991d333afd839c470c62bcbad
 use std::str::FromStr;
 use ast::{Expr, Opcode, Type, Decl};
 #[allow(unused_extern_crates)]

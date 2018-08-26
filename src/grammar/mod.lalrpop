@@ -24,16 +24,24 @@ match {
     _
 }
 
-Tier<Op, Next>: Box<Expr> = {
-    Tier<Op, Next> Op Next => Box::new(Expr::Op(<>)),
-    Next,
-};
-
 Num: i32 = {
     r"[0-9]+" => i32::from_str(<>).unwrap(),
 };
 
 Id: String = r"[a-zA-Z_][a-zA-Z0-9_]*" => String::from(<>);
+
+Tier<Op, Next>: Box<Expr> = {
+    Tier<Op, Next> Op Next => Box::new(Expr::Op(<>)),
+    Next,
+};
+
+Comma<T>: Vec<T> = {
+    <v:(<T> ",")*> <e:T> => {
+        let mut v = v;
+        v.push(e);
+        v
+    }
+};
 
 Term: Box<Expr> = {
     TRUE => Box::new(Expr::True),
@@ -103,14 +111,6 @@ Type: Type = {
     INT => Type::Int,
     BOOL => Type::Bool,
     STR => Type::Str,
-};
-
-Comma<T>: Vec<T> = {
-    <v:(<T> ",")*> <e:T> => {
-        let mut v = v;
-        v.push(e);
-        v
-    }
 };
 
 Attr: (String, Box<Expr>) = {
