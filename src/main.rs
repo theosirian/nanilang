@@ -2,86 +2,68 @@ mod ast;
 mod grammar;
 
 fn main() {
-    let expr = grammar::ExprParser::new().parse("22 * 44 + 66").unwrap();
-    println!("{:?}", expr);
-    let expr = grammar::ExprParser::new().parse("12 == 2 && -12").unwrap();
-    println!("{:?}", expr);
-    let expr = grammar::ExprParser::new()
-        .parse("12 == true ? __testing : 1 + 2")
-        .unwrap();
-    println!("{:?}", expr);
-    let expr = grammar::ExprParser::new()
-        .parse("12 == true ? (13 == hello ? 0 : 1) : 1 + 2")
-        .unwrap();
-    println!("{:?}", expr);
-
-    let expr = grammar::DeclParser::new().parse("let x: bool;").unwrap();
-    println!("{:?}", expr);
-    let expr = grammar::DeclParser::new().parse("let x, y: str;").unwrap();
-    println!("{:?}", expr);
-    let expr = grammar::DeclParser::new()
-        .parse("let x, y = true: bool;")
-        .unwrap();
-    println!("{:?}", expr);
-    let expr = grammar::DeclParser::new()
-        .parse("let x, y = 0 + x, z = 2: int;")
-        .unwrap();
-    println!("{:?}", expr);
-    let expr = grammar::DeclParser::new()
-        .parse("let x[2], y[3] = { 1, 2, 3 }: int; let x = 2: int;")
-        .unwrap();
-    println!("{:?}", expr);
-
-    let expr = grammar::CommandsParser::new()
-        .parse("a += b + 2; b -= 2; c *= 3; d /= 4; e %= 5; a[0] += 1;")
-        .unwrap();
-    println!("{:?}", expr);
-
-    let expr = grammar::CommandsParser::new().parse("skip; stop;").unwrap();
-    println!("{:?}", expr);
-
-    let expr = grammar::CommandsParser::new()
-        .parse("return; return 4; return a; return a[0];")
-        .unwrap();
-    println!("{:?}", expr);
-
-    let expr = grammar::CommandsParser::new()
-        .parse("read a; read a[0]; write 10; write a; write a, b[0];")
-        .unwrap();
-    println!("{:?}", expr);
-
-    let expr = grammar::CommandsParser::new()
-        .parse("hello(); hello(12); hello(12, 13);")
-        .unwrap();
-    println!("{:?}", expr);
-
     let expr = grammar::BlockParser::new()
-        .parse("{ let a = 0: int; hello(a); }")
-        .unwrap();
-    println!("{:?}", expr);
+        .parse(
+            r#"
+        {
+            let i: int;
+            let a = true: bool;
+            let b = 0: int;
+            let c[2] = {0, 1}: int;
 
-    let expr = grammar::BlockParser::new()
-        .parse("{ let a = true: bool; if (a) { let b = 0: int; hello(b); } }")
-        .unwrap();
-    println!("{:?}", expr);
+            let x: bool;
+            let y, z: str;
+            let w, d = true: bool;
+            let e, f = 0 + e, g = 2: int;
+            let h[2], i[3] = { 1, 2, 3 }: int;
+            let __testing = 1: int;
 
-    let expr = grammar::BlockParser::new()
-        .parse("{ let a = true: bool; if (a) { let b = 0: int; hello(b); } else { hello(a); } }")
-        .unwrap();
-    println!("{:?}", expr);
+            e = 22 * 44 + 66;
+            f = x == true ? __testing : 1 + 2;
+            g = w == true ? (13 == __testing ? 0 : 1) : 1 + 2;
 
-    let expr = grammar::BlockParser::new()
-        .parse("{ let a = true: bool; let b = 0: int; if (a) { let b = 0: int; hello(b); } else if (b > 3) { hello(false); } else { hello(a); } }")
-        .unwrap();
-    println!("{:?}", expr);
+            a += b + 2;
+            b -= 2;
+            c[0] += 1;
+            e *= 3;
+            f /= 4;
+            g %= 5;
 
-    let expr = grammar::BlockParser::new()
-        .parse("{ let i = 2: int; while (true) { hello(i); } }")
-        .unwrap();
-    println!("{:?}", expr);
+            read a;
+            read c[0];
+            write 10;
+            write a;
+            write a, c[0];
 
-    let expr = grammar::BlockParser::new()
-        .parse("{ let i: int; for (i = 0; i < 10; i += 1) { hello(i); } }")
+            hello();
+            hello(a);
+            hello(a, b);
+
+            if (a) {
+                let b = 0: int;
+                hello(b);
+            } else if (b > 3) {
+                hello(false);
+            } else {
+                hello(a);
+            }
+
+            while (true) {
+                hello(i);
+                skip;
+            }
+
+            for (i = 0; i < 10; i += 1) {
+                hello(i);
+                stop;
+            }
+
+            return;
+            return 1;
+            return a;
+        }
+        "#,
+        )
         .unwrap();
     println!("{:?}", expr);
 }
