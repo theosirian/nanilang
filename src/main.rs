@@ -11,6 +11,16 @@ fn main() {
             let b = 0: int;
             let c[2] = {0, 1}: int;
 
+            def hello(a, b: int): int {
+                let a = 0: int;
+                read a;
+                write a;
+            }
+
+            def hi() {
+                write 12;
+            }
+
             let x: bool;
             let y, z: str;
             let w, d = true: bool;
@@ -65,5 +75,5 @@ fn main() {
         "#,
         )
         .unwrap();
-    println!("{:?}", expr);
+    println!("{:#?}", expr);
 }

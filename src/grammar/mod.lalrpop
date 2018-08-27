@@ -32,7 +32,7 @@ Id: String = r"[a-zA-Z_][a-zA-Z0-9_]*" => String::from(<>);
 
 Var: Variable = {
     <Id> "[" <Num> "]" => Variable::Array(<>),
-    <Id> => Variable::Id(<>),
+    <Id> => Variable::Single(<>),
 };
 
 Tier<Op, Next>: Box<Expr> = {
@@ -167,20 +167,24 @@ ParamSingleDecl: String = {
 
 ParamDeclList = Comma<Either<ParamSingleDecl, ParamArrayDecl>>;
 
-FuncDecl: Decl = DEF <i:Id> "(" <p:SemiColon<(<ParamDeclList> ":" <Type>)>> ")" <t:(":" <Type>)?> <b:Block> => {
+FuncDecl: Decl = DEF <i:Id> "(" <p:SemiColon<(<ParamDeclList> ":" <Type>)>?> ")" <t:(":" <Type>)?> <b:Block> => {
     let mut v = Vec::new();
-    for x in p {
-        let d = x.0;
-        let t = x.1;
-        for i in d {
-            if let Some(j) = i.0 {
-                v.push(FuncParam::Single(j, t.clone()));
-            } else if let Some(j) = i.1 {
-                v.push(FuncParam::Array(j, t.clone()));
-            }
-        }
+    if let Some(p) = p {
+      for x in p {
+          let d = x.0;
+          let t = x.1;
+          for i in d {
+              if let Some(j) = i.0 {
+                  v.push(FuncParam::Single(j, t.clone()));
+              } else if let Some(j) = i.1 {
+                  v.push(FuncParam::Array(j, t.clone()));
+              }
+          }
+      }
+      Decl::Func(i, t, Some(v), b)
+    } else {
+      Decl::Func(i, t, None, b)
     }
-    Decl::Func(i, t, v, b)
 };
 
 Decl: Vec<Decl> = {
