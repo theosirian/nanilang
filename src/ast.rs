@@ -25,8 +25,8 @@ impl fmt::Debug for Expr {
         match self {
             Expr::Number(i) => write!(f, "${:?}", i),
             Expr::Variable(v) => write!(f, "{tabs}{:width$?}", v, tabs = tabs, width = width + 1),
-            Expr::True => write!(f, "true"),
-            Expr::False => write!(f, "false"),
+            Expr::True => write!(f, "$true"),
+            Expr::False => write!(f, "$false"),
             Expr::Op(l, o, r) => write!(f, "({:?} of {:?} and {:?})", o, l, r,),
             Expr::Right(o, e) => write!(
                 f,
@@ -301,10 +301,15 @@ impl fmt::Debug for Stmt {
                 if _elif.len() == 0 {
                     write!(f, " no elseifs")?;
                 } else {
-                    write!(f, " elseifs (\n{tabs}{:width$?}\n   {tabs})", _elif, tabs = tabs, width = width + 1)?;
+                    write!(f, " elseifs [")?;
+                    for i in _elif {
+                        write!(f, "\n      {tabs}(Elseif {:?} then (", i.0, tabs = tabs)?;
+                        write!(f, "\n{:width$?}),", i.1, width = width + 3)?;
+                    }
+                    write!(f, "\n   {tabs}]", tabs = tabs)?;
                 }
                 if let Some(_else) = _else {
-                    write!(f, " else (\n{:width$?}\n   {tabs}))", _else, tabs = tabs, width = width + 1)
+                    write!(f, " else (\n{:width$?}\n   {tabs}))", _else, tabs = tabs, width = width + 2)
                 } else {
                     write!(f, " no else)")
                 }
@@ -339,22 +344,10 @@ where
     B: fmt::Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let (width, tabs) = get_tabs(f);
+        let (width, _tabs) = get_tabs(f);
         match self {
-            Either::Left(a) => write!(
-                f,
-                "{tabs}(Left {:width$?})",
-                a,
-                tabs = tabs,
-                width = width + 1
-            ),
-            Either::Right(b) => write!(
-                f,
-                "{tabs}(Right {:width$?})",
-                b,
-                tabs = tabs,
-                width = width + 1
-            ),
+            Either::Left(a) => write!(f, "(Left {:width$?})", a, width = width + 1),
+            Either::Right(b) => write!(f, "(Right {:width$?})", b, width = width + 1),
         }
     }
 }
@@ -399,7 +392,7 @@ impl fmt::Debug for Block {
             for i in &self.commands {
                 write!(
                     f,
-                    "\n   {tabs}{:width$?}, ",
+                    "\n      {tabs}{:width$?}, ",
                     i,
                     tabs = tabs,
                     width = width + 1
