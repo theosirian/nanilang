@@ -170,20 +170,20 @@ ParamDeclList = Comma<Either<ParamSingleDecl, ParamArrayDecl>>;
 FuncDecl: Decl = DEF <i:Id> "(" <p:SemiColon<(<ParamDeclList> ":" <Type>)>?> ")" <t:(":" <Type>)?> <b:Block> => {
     let mut v = Vec::new();
     if let Some(p) = p {
-      for x in p {
-          let d = x.0;
-          let t = x.1;
-          for i in d {
-              if let Some(j) = i.0 {
-                  v.push(FuncParam::Single(j, t.clone()));
-              } else if let Some(j) = i.1 {
-                  v.push(FuncParam::Array(j, t.clone()));
-              }
-          }
-      }
-      Decl::Func(i, t, Some(v), b)
+        for x in p {
+            let d = x.0;
+            let t = x.1;
+            for i in d {
+                if let Some(j) = i.0 {
+                    v.push(FuncParam::Single(j, t.clone()));
+                } else if let Some(j) = i.1 {
+                    v.push(FuncParam::Array(j, t.clone()));
+                }
+            }
+        }
+        Decl::Func(i, t, Some(v), b)
     } else {
-      Decl::Func(i, t, None, b)
+        Decl::Func(i, t, None, b)
     }
 };
 
@@ -235,11 +235,20 @@ Commands: Either<Stmt, Block> = {
     <Block> => Either::Right(<>),
 };
 
-pub Block: Block = "{" <d:Decl*> <c:Commands*> "}" => {
+Block: Block = "{" <d:Decl*> <c:Commands*> "}" => {
     let mut vd = Vec::new();
     for i in d {
         let mut i = i;
         vd.append(&mut i);
     }
     Block::new(vd, c)
+};
+
+pub Program: Vec<Decl> = <d:Decl+> => {
+    let mut vd = Vec::new();
+    for i in d {
+        let mut i = i;
+        vd.append(&mut i);
+    }
+    vd
 };
