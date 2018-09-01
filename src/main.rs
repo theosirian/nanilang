@@ -1,81 +1,182 @@
+extern crate getopts;
+extern crate lalrpop_util;
+
+use getopts::Options;
+use std::env;
+use std::fs;
+use std::process::exit;
+
 mod ast;
 mod grammar;
 
+enum ExitCodes {
+    Success = 0,
+    FileError = 1,
+    BadFormatParam = 2,
+}
+
+fn print_usage(opt: Options) {
+    println!("{}", opt.usage(&"Compile the nani lang"));
+}
+
 fn main() {
-    let expr = grammar::ProgramParser::new()
-        .parse(
-            r#"
-def hello(a, b: int): int {
-    let a = 0: int;
-    read a;
-    write a;
-}
+    let args: Vec<String> = env::args().collect();
 
-let global = 13: int;
+    let mut opts = Options::new();
+    opts.optflag("h", "help", "help option")
+        .optopt("i", "input", "input file", "FILE");
 
-def hi() {
-    write 12;
-}
+    let matches = match opts.parse(&args[1..]) {
+        Ok(m) => m,
+        Err(_) => {
+            print_usage(opts);
+            exit(ExitCodes::BadFormatParam as i32);
+        }
+    };
 
-def main(): int {
-    let i: int;
-    let a = true: bool;
-    let b = 0: int;
-    let c[2] = {0, 1}: int;
+    let input_file_name = match matches.opt_str("i") {
+        Some(f) => f,
+        None => match matches.free.len() {
+            1 => matches.free[0].clone(),
+            _ => {
+                print_usage(opts);
+                exit(ExitCodes::FileError as i32);
+            }
+        },
+    };
 
-    let x: bool;
-    let y, z: str;
-    let w, d = true: bool;
-    let e, f = 0 + e, g = 2: int;
-    let h[2], i[3] = { 1, 2, 3 }: int;
-    let __testing = 1: int;
-
-    e = 22 * 44 + 66;
-    f = x == true ? __testing : 1 + 2;
-    g = w == true ? (13 == __testing ? 0 : 1) : 1 + 2;
-
-    a += b + 2;
-    b -= 2;
-    c[0] += 1;
-    e *= 3;
-    f /= 4;
-    g %= 5;
-
-    read a;
-    read c[0];
-    write 10;
-    write a;
-    write a, c[0];
-
-    hello();
-    hello(a);
-    hello(a, b);
-
-    if (a) {
-        let b = 0: int;
-        hello(b);
-    } else if (b > 3) {
-        hello(false);
-    } else {
-        hello(a);
+    if matches.opt_present("h") {
+        print_usage(opts);
+        exit(ExitCodes::Success as i32);
     }
 
-    while (true) {
-        hello(i);
-        skip;
-    }
+    let content = match fs::read_to_string(input_file_name) {
+        Ok(c) => c,
+        Err(e) => {
+            println!("Error on file read: {}", e);
+            exit(ExitCodes::FileError as i32);
+        }
+    };
 
-    for (i = 0; i < 10; i += 1) {
-        hello(i);
-        stop;
+    let mut erros = vec![];
+    match grammar::ProgramParser::new().parse(&mut erros, &content) {
+        Ok(expr) => println!("{:#?}", expr),
+        Err(err) => {}
     }
-
-    return;
-    return 1;
-    return a;
 }
-        "#,
-        )
+
+#[test]
+fn parse_var_decl_with_init() {
+    let mut errors = vec![];
+
+    let var_decl = grammar::ProgramParser::new()
+        .parse(&mut errors, "let a = 2 : int;")
         .unwrap();
-    println!("{:#?}", expr);
+
+    assert_eq!(
+        var_decl,
+        [ast::Decl::Single(
+            "a".to_string(),
+            ast::Type::Int,
+            Some(Box::new(ast::Expr::Number(2)))
+        )]
+    );
+}
+
+#[test]
+fn parse_var_decl_without_init() {
+    let mut errors = vec![];
+
+    let var_decl = grammar::ProgramParser::new()
+        .parse(&mut errors, "let a : int;")
+        .unwrap();
+
+    assert_eq!(
+        var_decl,
+        [ast::Decl::Single("a".to_string(), ast::Type::Int, None)]
+    );
+}
+
+#[test]
+fn parse_var_multi_decl_without_init() {
+    let mut errors = vec![];
+
+    let var_decl = grammar::ProgramParser::new()
+        .parse(&mut errors, "let a, b,c : int;")
+        .unwrap();
+
+    assert_eq!(
+        var_decl,
+        [
+            ast::Decl::Single("a".to_string(), ast::Type::Int, None),
+            ast::Decl::Single("b".to_string(), ast::Type::Int, None),
+            ast::Decl::Single("c".to_string(), ast::Type::Int, None)
+        ]
+    );
+}
+
+#[test]
+fn parse_var_multi_decl_with_init() {
+    let mut errors = vec![];
+
+    let var_decl = grammar::ProgramParser::new()
+        .parse(&mut errors, "let a = 1, b  =2,c = 3 : int;")
+        .unwrap();
+
+    assert_eq!(
+        var_decl,
+        [
+            ast::Decl::Single(
+                "a".to_string(),
+                ast::Type::Int,
+                Some(Box::new(ast::Expr::Number(1)))
+            ),
+            ast::Decl::Single(
+                "b".to_string(),
+                ast::Type::Int,
+                Some(Box::new(ast::Expr::Number(2)))
+            ),
+            ast::Decl::Single(
+                "c".to_string(),
+                ast::Type::Int,
+                Some(Box::new(ast::Expr::Number(3)))
+            )
+        ]
+    );
+}
+
+#[test]
+fn parse_var_decl_with_expr_init() {
+    let mut errors = vec![];
+
+    let var_decl = grammar::ProgramParser::new()
+        .parse(&mut errors, "let a = b + 1 : int;")
+        .unwrap();
+
+    assert_eq!(
+        var_decl,
+        [ast::Decl::Single(
+            "a".to_string(),
+            ast::Type::Int,
+            Some(Box::new(ast::Expr::Op(
+                Box::new(ast::Expr::Variable(ast::Variable::Single("b".to_string()))),
+                ast::Opcode::Add,
+                Box::new(ast::Expr::Number(1))
+            )))
+        )]
+    );
+}
+
+#[test]
+fn parse_var_decl_array_int_without_init() {
+    let mut errors = vec![];
+
+    let var_decl = grammar::ProgramParser::new()
+        .parse(&mut errors, "let v[10] : int;")
+        .unwrap();
+
+    assert_eq!(
+        var_decl,
+        [ast::Decl::Array("v".to_string(), ast::Type::Int, 10, None)]
+    );
 }

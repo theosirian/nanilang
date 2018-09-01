@@ -134,6 +134,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "getopts"
+version = "0.2.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "unicode-width 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "itertools"
 version = "0.7.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -238,6 +246,7 @@ dependencies = [
 name = "nanilang"
 version = "0.1.0"
 dependencies = [
+ "getopts 0.2.18 (registry+https://github.com/rust-lang/crates.io-index)",
  "lalrpop 0.15.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "lalrpop-util 0.15.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "llvm-sys 60.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -473,6 +482,11 @@ version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
+name = "unicode-width"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
 name = "unicode-xid"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -550,6 +564,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 "checksum fuchsia-zircon-sys 0.3.3 (registry+https://github.com/rust-lang/crates.io-index)" = "3dcaa9ae7725d12cdb85b3ad99a434db70b468c09ded17e012d86b5c1010f7a7"
 "checksum gcc 0.3.54 (registry+https://github.com/rust-lang/crates.io-index)" = "5e33ec290da0d127825013597dbdfc28bee4964690c7ce1166cbc2a7bd08b1bb"
 "checksum generic-array 0.9.0 (registry+https://github.com/rust-lang/crates.io-index)" = "ef25c5683767570c2bbd7deba372926a55eaae9982d7726ee2a1050239d45b9d"
+"checksum getopts 0.2.18 (registry+https://github.com/rust-lang/crates.io-index)" = "0a7292d30132fb5424b354f5dc02512a86e4c516fe544bb7a25e7f266951b797"
 "checksum itertools 0.7.8 (registry+https://github.com/rust-lang/crates.io-index)" = "f58856976b776fedd95533137617a02fb25719f40e7d9b01c7043cd65474f450"
 "checksum kernel32-sys 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)" = "7507624b29483431c0ba2d82aece8ca6cdba9382bff4ddd0f7490560c056098d"
 "checksum lalrpop 0.15.2 (registry+https://github.com/rust-lang/crates.io-index)" = "ba451f7bd819b7afc99d4cf4bdcd5a4861e64955ba9680ac70df3a50625ad6cf"
@@ -588,6 +603,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 "checksum thread_local 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)" = "c6b53e329000edc2b34dbe8545fd20e55a333362d0a321909685a19bd28c3f1b"
 "checksum typenum 1.10.0 (registry+https://github.com/rust-lang/crates.io-index)" = "612d636f949607bdf9b123b4a6f6d966dedf3ff669f7f045890d3a4a73948169"
 "checksum ucd-util 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)" = "fd2be2d6639d0f8fe6cdda291ad456e23629558d466e2789d2c3e9892bda285d"
+"checksum unicode-width 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)" = "882386231c45df4700b275c7ff55b6f3698780a650026380e72dabe76fa46526"
 "checksum unicode-xid 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)" = "fc72304796d0818e357ead4e000d19c9c174ab23dc11093ac919054d20a6a7fc"
 "checksum unreachable 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)" = "382810877fe448991dfc7f0dd6e3ae5d58088fd0ea5e35189655f84e6814fa56"
 "checksum utf8-ranges 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)" = "662fab6525a98beff2921d7f61a39e7d59e0b425ebc7d0d9e66d316e55124122"
