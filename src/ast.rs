@@ -10,7 +10,7 @@ fn get_tabs(f: &fmt::Formatter) -> (usize, String) {
 }
 
 pub enum Expr {
-    Number(i32),
+    Number(u64),
     Variable(Variable),
     True,
     False,
@@ -116,7 +116,7 @@ impl fmt::Debug for Type {
 #[derive(Clone)]
 pub enum Variable {
     Single(String),
-    Array(String, i32),
+    Array(String, u64),
 }
 
 impl fmt::Debug for Variable {
@@ -130,7 +130,7 @@ impl fmt::Debug for Variable {
 
 pub enum Decl {
     Single(String, Type, Option<Box<Expr>>),
-    Array(String, Type, i32, Option<Vec<Box<Expr>>>),
+    Array(String, Type, u64, Option<Vec<Box<Expr>>>),
     Func(String, Option<Type>, Option<Vec<FuncParam>>, Block),
 }
 
@@ -353,8 +353,8 @@ where
 }
 
 pub struct Block {
-    decl: Vec<Decl>,
-    commands: Vec<Either<Stmt, Block>>,
+    pub decl: Vec<Decl>,
+    pub commands: Vec<Either<Stmt, Block>>,
 }
 
 impl Block {

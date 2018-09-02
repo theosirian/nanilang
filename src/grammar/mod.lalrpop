@@ -24,8 +24,8 @@ match {
     _
 }
 
-Num: i32 = {
-    r"[0-9]+" => i32::from_str(<>).unwrap(),
+Num: u64 = {
+    r"[0-9]+" => u64::from_str(<>).unwrap(),
 };
 
 Id: String = r"[a-zA-Z_][a-zA-Z0-9_]*" => String::from(<>);
@@ -131,7 +131,7 @@ Type: Type = {
     STR => Type::Str,
 };
 
-VarArrayDecl: (String, i32, Option<Vec<Box<Expr>>>) = {
+VarArrayDecl: (String, u64, Option<Vec<Box<Expr>>>) = {
     <a:Id> "[" <n:Num> "]" "=" "{" <f:Comma<Expr>> "}" => (a, n, Some(f)),
     <a:Id> "[" <n:Num> "]" => (a, n, None),
 };
