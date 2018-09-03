@@ -1,7 +1,9 @@
+use lalrpop_util::ErrorRecovery;
+
 use std::str::FromStr;
 use ast::{FuncParam, Variable, Either, Block, Stmt, Expr, Opcode, Type, Decl};
 
-grammar;
+grammar<'err>(errors: &'err mut Vec<ErrorRecovery<usize, Token<'input>, &'static str>>);
 
 match {
     "bool" => BOOL,
