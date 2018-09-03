@@ -206,7 +206,10 @@ unsafe fn global_add_func(
     let entry = LLVMAppendBasicBlockInContext(context, function, c_str!("entry"));
     LLVMPositionBuilderAtEnd(builder, entry);
 
-    if n == "main" {
+    let test = LLVMGetNamedFunction(module, c_str!("printf"));
+    // Stupid way of checking if the function is already defined.
+    let against = ptr::null::<LLVMValueRef>() as *mut _;
+    if test == against {
         LLVMBuildGlobalStringPtr(builder, c_str!("%d"), c_str!("format_int"));
         LLVMBuildGlobalStringPtr(builder, c_str!("%s"), c_str!("format_str"));
 

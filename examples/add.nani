@@ -1,5 +1,5 @@
 def readme(): int {
-  let i: int;
+    let i: int;
   read i;
   return i;
 }
