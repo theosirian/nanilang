@@ -66,7 +66,7 @@ fn main() {
         let mut erros = vec![];
         match grammar::ProgramParser::new().parse(&mut erros, &content) {
             Ok(expr) => gen::gen(expr),
-            Err(err) => {}
+            Err(err) => println!("{:?}", err),
         }
     }
 }

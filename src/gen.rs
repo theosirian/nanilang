@@ -48,6 +48,7 @@ unsafe fn gen_type(context: LLVMContextRef, t: Option<Type>) -> LLVMTypeRef {
 
 unsafe fn flatten_expr(
     context: LLVMContextRef,
+    module: LLVMModuleRef,
     symbols: &HashMap<String, Vec<Symbol>>,
     builder: LLVMBuilderRef,
     e: Expr,
@@ -76,29 +77,40 @@ unsafe fn flatten_expr(
         }
         Expr::Op(lhs, op, rhs) => match op {
             Opcode::Add => {
-                let lhs = flatten_expr(context, symbols, builder, *lhs);
-                let rhs = flatten_expr(context, symbols, builder, *rhs);
+                let lhs = flatten_expr(context, module, symbols, builder, *lhs);
+                let rhs = flatten_expr(context, module, symbols, builder, *rhs);
                 v.push(LLVMBuildAdd(builder, lhs, rhs, c_str!("add")));
             }
             Opcode::Sub => {
-                let lhs = flatten_expr(context, symbols, builder, *lhs);
-                let rhs = flatten_expr(context, symbols, builder, *rhs);
+                let lhs = flatten_expr(context, module, symbols, builder, *lhs);
+                let rhs = flatten_expr(context, module, symbols, builder, *rhs);
                 v.push(LLVMBuildSub(builder, lhs, rhs, c_str!("sub")));
             }
             Opcode::Mul => {
-                let lhs = flatten_expr(context, symbols, builder, *lhs);
-                let rhs = flatten_expr(context, symbols, builder, *rhs);
+                let lhs = flatten_expr(context, module, symbols, builder, *lhs);
+                let rhs = flatten_expr(context, module, symbols, builder, *rhs);
                 v.push(LLVMBuildMul(builder, lhs, rhs, c_str!("mul")));
             }
             Opcode::Div => {
-                let lhs = flatten_expr(context, symbols, builder, *lhs);
-                let rhs = flatten_expr(context, symbols, builder, *rhs);
+                let lhs = flatten_expr(context, module, symbols, builder, *lhs);
+                let rhs = flatten_expr(context, module, symbols, builder, *rhs);
                 v.push(LLVMBuildSDiv(builder, lhs, rhs, c_str!("sdiv")));
             }
             _ => println!("uninplemented!"),
         },
+        Expr::Call(n, None) => {
+            let called_fn = LLVMGetNamedFunction(module, as_str!(n));
+            let mut args = [];
+            v.push(LLVMBuildCall(
+                builder,
+                called_fn,
+                args.as_mut_ptr(),
+                0,
+                c_str!("fn_call"),
+            ));
+        }
         Expr::Right(Opcode::Negative, rhs) => {
-            let rhs = flatten_expr(context, symbols, builder, *rhs);
+            let rhs = flatten_expr(context, module, symbols, builder, *rhs);
             v.push(LLVMBuildMul(
                 builder,
                 LLVMConstInt(gen_type(context, Some(Type::Int)), -1i64 as u64, 1),
@@ -107,7 +119,7 @@ unsafe fn flatten_expr(
             ));
         }
         Expr::Right(Opcode::Not, rhs) => {
-            let rhs = flatten_expr(context, symbols, builder, *rhs);
+            let rhs = flatten_expr(context, module, symbols, builder, *rhs);
             v.push(LLVMBuildNot(builder, rhs, c_str!("not")));
         }
         Expr::Right(o, _) => {
@@ -125,6 +137,7 @@ unsafe fn flatten_expr(
 
 unsafe fn local_add_variable(
     context: LLVMContextRef,
+    module: LLVMModuleRef,
     symbols: &mut HashMap<String, Vec<Symbol>>,
     builder: LLVMBuilderRef,
     n: String,
@@ -134,7 +147,7 @@ unsafe fn local_add_variable(
     let t = gen_type(context, Some(t));
     let decl = LLVMBuildAlloca(builder, t, as_str!(n));
     if let Some(e) = e {
-        let flattened = flatten_expr(context, symbols, builder, *e);
+        let flattened = flatten_expr(context, module, symbols, builder, *e);
         LLVMBuildStore(builder, flattened, decl);
     }
     let new_symbol = Symbol::Variable(decl);
@@ -143,6 +156,7 @@ unsafe fn local_add_variable(
 
 unsafe fn local_add_array(
     context: LLVMContextRef,
+    module: LLVMModuleRef,
     symbols: &mut HashMap<String, Vec<Symbol>>,
     builder: LLVMBuilderRef,
     n: String,
@@ -207,8 +221,10 @@ unsafe fn global_add_func(
 
     for i in b.decl {
         match i {
-            Decl::Single(n, t, e) => local_add_variable(context, symbols, builder, n, t, e),
-            Decl::Array(n, t, s, e) => local_add_array(context, symbols, builder, n, t, s, e),
+            Decl::Single(n, t, e) => local_add_variable(context, module, symbols, builder, n, t, e),
+            Decl::Array(n, t, s, e) => {
+                local_add_array(context, module, symbols, builder, n, t, s, e)
+            }
             _ => println!("uninplemented!"),
         }
     }
@@ -234,7 +250,7 @@ unsafe fn gen_block(
             Either::Left(Stmt::Attr(Variable::Single(v), e)) => {
                 if let Some(vec) = my_symbols.get(&v) {
                     if let Some(Symbol::Variable(mut var)) = vec.last() {
-                        let flattened = flatten_expr(context, &my_symbols, builder, *e);
+                        let flattened = flatten_expr(context, module, &my_symbols, builder, *e);
                         LLVMBuildStore(builder, flattened, var);
                     } else {
                         panic!("Variable <{:?}> is used but not declared!", v);
@@ -245,7 +261,7 @@ unsafe fn gen_block(
             }
             Either::Left(Stmt::Write(vec)) => {
                 for i in vec {
-                    let flattened = flatten_expr(context, &my_symbols, builder, *i);
+                    let flattened = flatten_expr(context, module, &my_symbols, builder, *i);
                     let format_str = LLVMGetNamedGlobal(module, c_str!("format_int"));
                     let mut printf_args = [format_str, flattened];
                     let printf_fn = LLVMGetNamedFunction(module, c_str!("printf"));
@@ -276,7 +292,7 @@ unsafe fn gen_block(
             }
             Either::Left(Stmt::Return(v)) => {
                 if let Some(v) = v {
-                    let flattened = flatten_expr(context, &my_symbols, builder, *v);
+                    let flattened = flatten_expr(context, module, &my_symbols, builder, *v);
                     LLVMBuildRet(builder, flattened);
                 } else {
                     LLVMBuildRetVoid(builder);
@@ -287,10 +303,10 @@ unsafe fn gen_block(
                 for i in b.decl {
                     match i {
                         Decl::Single(n, t, e) => {
-                            local_add_variable(context, &mut my_symbols, builder, n, t, e)
+                            local_add_variable(context, module, &mut my_symbols, builder, n, t, e)
                         }
                         Decl::Array(n, t, s, e) => {
-                            local_add_array(context, &mut my_symbols, builder, n, t, s, e)
+                            local_add_array(context, module, &mut my_symbols, builder, n, t, s, e)
                         }
                         _ => panic!("Cannot declare functions inside functions!"),
                     }

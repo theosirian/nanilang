@@ -1,9 +1,12 @@
-def main(): int {
+def readme(): int {
   let i: int;
-  let j = -13: int;
-  let k: int;
   read i;
-  k = i + j;
-  write k;
+  return i;
+}
+
+def main(): int {
+  let i = readme(): int;
+  let j = -13: int;
+  write i + j;
   return 0;
 }

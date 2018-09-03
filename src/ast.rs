@@ -26,6 +26,7 @@ pub enum Expr {
     Variable(Variable),
     True,
     False,
+    Call(String, Option<Vec<Box<Expr>>>),
     Op(Box<Expr>, Opcode, Box<Expr>),
     Right(Opcode, Box<Expr>),
     Ternary(Box<Expr>, Box<Expr>, Box<Expr>),
@@ -112,6 +113,16 @@ impl fmt::Debug for Expr {
             Expr::Variable(v) => write!(f, "{tabs}{:width$?}", v, tabs = tabs, width = width + 1),
             Expr::True => write!(f, "$true"),
             Expr::False => write!(f, "$false"),
+
+            Expr::Call(fun, Some(p)) => write!(
+                f,
+                "(Call {:width$?} with params {:?})",
+                fun,
+                p,
+                width = width + 1
+            ),
+            Expr::Call(fun, _) => write!(f, "(Call {:width$?})", fun, width = width + 1),
+
             Expr::Op(l, o, r) => write!(f, "({:?} of {:?} and {:?})", o, l, r,),
             Expr::Right(o, e) => write!(
                 f,
