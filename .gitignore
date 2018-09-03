@@ -14,3 +14,7 @@ src/grammar/mod.rs
 
 # vim Session
 Session.vim
+
+# llvm outputs
+*.ll
+*.s

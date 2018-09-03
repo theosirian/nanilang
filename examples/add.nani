@@ -1,0 +1,8 @@
+def main(): int {
+  let i = 10: int;
+  let j = 20: int;
+  let k = 0: int;
+  k = i + j;
+  write k;
+  return 0;
+}

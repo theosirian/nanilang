@@ -1,6 +1,7 @@
 def hello(a, b: int): int {
     let a = 7: int;
-    let b[2] = {4, 3} : int;
+    let b = 4: int;
+    let c[2] = {4, 3} : int;
     read a;
     write a;
     return 1;
@@ -20,12 +21,14 @@ def main(): int {
     let b = 0: int;
     let c[2] = {0, 1}: int;
     let x: bool;
-    let y, z: str;
+    let y, z: int;
     let w, d = true: bool;
     let e, f = 0 + e, g = 2: int;
     let h[2], i[3] = { 1, 2, 3 }: int;
     let __testing = 1: int;
 
+    e = 73 + 23;
+    x = false;
     e = 22 * 44 + 66;
     f = x == true ? __testing : 1 + 2;
     g = w == true ? (13 == __testing ? 0 : 1) : 1 + 2;

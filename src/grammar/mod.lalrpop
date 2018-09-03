@@ -1,7 +1,7 @@
 use lalrpop_util::ErrorRecovery;
 
 use std::str::FromStr;
-use ast::{FuncParam, Variable, Either, Block, Stmt, Expr, Opcode, Type, Decl};
+use ast::*;
 
 grammar<'err>(errors: &'err mut Vec<ErrorRecovery<usize, Token<'input>, &'static str>>);
 
@@ -238,19 +238,13 @@ Commands: Either<Stmt, Block> = {
 };
 
 Block: Block = "{" <d:Decl*> <c:Commands*> "}" => {
-    let mut vd = Vec::new();
-    for i in d {
-        let mut i = i;
-        vd.append(&mut i);
-    }
-    Block::new(vd, c)
+    flatten!(d);
+    Block::new(d, c)
 };
 
 pub Program: Vec<Decl> = <d:Decl+> => {
-    let mut vd = Vec::new();
-    for i in d {
-        let mut i = i;
-        vd.append(&mut i);
-    }
-    vd
+    flatten!(d);
+    d
 };
+
+

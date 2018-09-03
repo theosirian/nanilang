@@ -1,5 +1,17 @@
 use std::fmt;
 
+#[macro_export]
+macro_rules! flatten {
+    ($v:ident) => {
+        let mut __aux = Vec::new();
+        for i in $v {
+            let mut i = i;
+            __aux.append(&mut i);
+        }
+        let $v = __aux;
+    };
+}
+
 fn get_tabs(f: &fmt::Formatter) -> (usize, String) {
     let width = if let Some(width) = f.width() {
         width
@@ -17,6 +29,79 @@ pub enum Expr {
     Op(Box<Expr>, Opcode, Box<Expr>),
     Right(Opcode, Box<Expr>),
     Ternary(Box<Expr>, Box<Expr>, Box<Expr>),
+}
+
+pub enum Opcode {
+    Negative,
+
+    Not,
+
+    Mul,
+    Div,
+    Mod,
+
+    Add,
+    Sub,
+
+    Lesser,
+    LesserOrEqual,
+
+    Greater,
+    GreaterOrEqual,
+
+    Equal,
+    Different,
+
+    And,
+
+    Or,
+}
+
+#[derive(Clone)]
+pub enum Type {
+    Int,
+    Bool,
+    Str,
+}
+
+#[derive(Clone)]
+pub enum Variable {
+    Single(String),
+    Array(String, u64),
+}
+
+pub enum Decl {
+    Single(String, Type, Option<Box<Expr>>),
+    Array(String, Type, u64, Option<Vec<Box<Expr>>>),
+    Func(String, Option<Type>, Option<Vec<FuncParam>>, Block),
+}
+
+pub enum FuncParam {
+    Single(String, Type),
+    Array(String, Type),
+}
+
+pub enum Stmt {
+    Attr(Variable, Box<Expr>),
+    Stop,
+    Skip,
+    Return(Option<Box<Expr>>),
+    Read(Variable),
+    Write(Vec<Box<Expr>>),
+    Call(String, Option<Vec<Box<Expr>>>),
+    If(Box<Expr>, Block, Vec<(Box<Expr>, Block)>, Option<Block>),
+    While(Box<Expr>, Block),
+    For(Box<Stmt>, Box<Expr>, Box<Stmt>, Block),
+}
+
+pub enum Either<A, B> {
+    Left(A),
+    Right(B),
+}
+
+pub struct Block {
+    pub decl: Vec<Decl>,
+    pub commands: Vec<Either<Stmt, Block>>,
 }
 
 impl fmt::Debug for Expr {
@@ -48,32 +133,6 @@ impl fmt::Debug for Expr {
     }
 }
 
-pub enum Opcode {
-    Negative,
-
-    Not,
-
-    Mul,
-    Div,
-    Mod,
-
-    Add,
-    Sub,
-
-    Lesser,
-    LesserOrEqual,
-
-    Greater,
-    GreaterOrEqual,
-
-    Equal,
-    Different,
-
-    And,
-
-    Or,
-}
-
 impl fmt::Debug for Opcode {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -96,13 +155,6 @@ impl fmt::Debug for Opcode {
     }
 }
 
-#[derive(Clone)]
-pub enum Type {
-    Int,
-    Bool,
-    Str,
-}
-
 impl fmt::Debug for Type {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -113,12 +165,6 @@ impl fmt::Debug for Type {
     }
 }
 
-#[derive(Clone)]
-pub enum Variable {
-    Single(String),
-    Array(String, u64),
-}
-
 impl fmt::Debug for Variable {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -126,12 +172,6 @@ impl fmt::Debug for Variable {
             Variable::Array(i, s) => write!(f, "(Arr {:?} at pos {:?})", i, s),
         }
     }
-}
-
-pub enum Decl {
-    Single(String, Type, Option<Box<Expr>>),
-    Array(String, Type, u64, Option<Vec<Box<Expr>>>),
-    Func(String, Option<Type>, Option<Vec<FuncParam>>, Block),
 }
 
 impl fmt::Debug for Decl {
@@ -221,11 +261,6 @@ impl fmt::Debug for Decl {
     }
 }
 
-pub enum FuncParam {
-    Single(String, Type),
-    Array(String, Type),
-}
-
 impl fmt::Debug for FuncParam {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let (width, tabs) = get_tabs(f);
@@ -248,19 +283,6 @@ impl fmt::Debug for FuncParam {
             ),
         }
     }
-}
-
-pub enum Stmt {
-    Attr(Variable, Box<Expr>),
-    Stop,
-    Skip,
-    Return(Option<Box<Expr>>),
-    Read(Variable),
-    Write(Vec<Box<Expr>>),
-    Call(String, Option<Vec<Box<Expr>>>),
-    If(Box<Expr>, Block, Vec<(Box<Expr>, Block)>, Option<Block>),
-    While(Box<Expr>, Block),
-    For(Box<Stmt>, Box<Expr>, Box<Stmt>, Block),
 }
 
 impl fmt::Debug for Stmt {
@@ -333,11 +355,6 @@ impl fmt::Debug for Stmt {
     }
 }
 
-pub enum Either<A, B> {
-    Left(A),
-    Right(B),
-}
-
 impl<A, B> fmt::Debug for Either<A, B>
 where
     A: fmt::Debug,
@@ -350,11 +367,6 @@ where
             Either::Right(b) => write!(f, "(Right {:width$?})", b, width = width + 1),
         }
     }
-}
-
-pub struct Block {
-    pub decl: Vec<Decl>,
-    pub commands: Vec<Either<Stmt, Block>>,
 }
 
 impl Block {

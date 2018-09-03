@@ -2,6 +2,7 @@ extern crate getopts;
 extern crate lalrpop_util;
 extern crate llvm_sys as llvm;
 
+#[macro_use]
 mod ast;
 mod gen;
 mod grammar;
