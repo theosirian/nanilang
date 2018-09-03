@@ -61,7 +61,11 @@ unsafe fn flatten_expr(
             if let Some(vec) = symbols.get(&s) {
                 if let Some(Symbol::Variable(mut var)) = vec.last().clone() {
                     v.push(LLVMBuildLoad(builder, var, c_str!("flat")));
+                } else {
+                    panic!("Variable <{:?}> is used but not declared!", s);
                 }
+            } else {
+                panic!("Variable <{:?}> is used but not declared!", s);
             }
         }
         Expr::True => {
@@ -79,28 +83,33 @@ unsafe fn flatten_expr(
             Opcode::Sub => {
                 let lhs = flatten_expr(context, symbols, builder, *lhs);
                 let rhs = flatten_expr(context, symbols, builder, *rhs);
-                v.push(LLVMConstSub(lhs, rhs));
+                v.push(LLVMBuildSub(builder, lhs, rhs, c_str!("sub")));
             }
             Opcode::Mul => {
                 let lhs = flatten_expr(context, symbols, builder, *lhs);
                 let rhs = flatten_expr(context, symbols, builder, *rhs);
-                v.push(LLVMConstMul(lhs, rhs));
+                v.push(LLVMBuildMul(builder, lhs, rhs, c_str!("mul")));
             }
             Opcode::Div => {
                 let lhs = flatten_expr(context, symbols, builder, *lhs);
                 let rhs = flatten_expr(context, symbols, builder, *rhs);
-                v.push(LLVMConstSDiv(lhs, rhs));
+                v.push(LLVMBuildSDiv(builder, lhs, rhs, c_str!("sdiv")));
             }
             _ => println!("uninplemented!"),
         },
-        Expr::Right(Opcode::Negative, e) => {
-            v.push(LLVMConstInt(
-                gen_type(context, Some(Type::Bool)),
-                -1i64 as u64,
-                1,
+        Expr::Right(Opcode::Negative, rhs) => {
+            let rhs = flatten_expr(context, symbols, builder, *rhs);
+            v.push(LLVMBuildMul(
+                builder,
+                LLVMConstInt(gen_type(context, Some(Type::Int)), -1i64 as u64, 1),
+                rhs,
+                c_str!("neg"),
             ));
         }
-        Expr::Right(Opcode::Not, e) => {}
+        Expr::Right(Opcode::Not, rhs) => {
+            let rhs = flatten_expr(context, symbols, builder, *rhs);
+            v.push(LLVMBuildNot(builder, rhs, c_str!("not")));
+        }
         Expr::Right(o, _) => {
             panic!("<{:?}> is an invalid right operator! ", o);
         }
@@ -186,11 +195,14 @@ unsafe fn global_add_func(
     if n == "main" {
         LLVMBuildGlobalStringPtr(builder, c_str!("%d"), c_str!("format_int"));
         LLVMBuildGlobalStringPtr(builder, c_str!("%s"), c_str!("format_str"));
+
         let int8_type = LLVMInt8TypeInContext(context);
         let int32_type = LLVMInt32TypeInContext(context);
-        let mut printf_args = [LLVMPointerType(int8_type, 0)];
-        let printf_type = LLVMFunctionType(int32_type, printf_args.as_mut_ptr(), 0, 1);
-        LLVMAddFunction(module, c_str!("printf"), printf_type);
+        let mut args = [LLVMPointerType(int8_type, 0)];
+        let fn_type = LLVMFunctionType(int32_type, args.as_mut_ptr(), 0, 1);
+
+        LLVMAddFunction(module, c_str!("printf"), fn_type);
+        LLVMAddFunction(module, c_str!("scanf"), fn_type);
     }
 
     for i in b.decl {
@@ -224,7 +236,11 @@ unsafe fn gen_block(
                     if let Some(Symbol::Variable(mut var)) = vec.last() {
                         let flattened = flatten_expr(context, &my_symbols, builder, *e);
                         LLVMBuildStore(builder, flattened, var);
+                    } else {
+                        panic!("Variable <{:?}> is used but not declared!", v);
                     }
+                } else {
+                    panic!("Variable <{:?}> is used but not declared!", v);
                 }
             }
             Either::Left(Stmt::Write(vec)) => {
@@ -240,6 +256,22 @@ unsafe fn gen_block(
                         2,
                         c_str!("write"),
                     );
+                }
+            }
+            Either::Left(Stmt::Read(Variable::Single(v))) => {
+                if let Some(vec) = my_symbols.get(&v) {
+                    if let Some(Symbol::Variable(mut var)) = vec.last() {
+                        let format_str = LLVMGetNamedGlobal(module, c_str!("format_int"));
+                        let mut scanf_args = [format_str, var];
+                        let scanf_fn = LLVMGetNamedFunction(module, c_str!("scanf"));
+                        LLVMBuildCall(
+                            builder,
+                            scanf_fn,
+                            scanf_args.as_mut_ptr(),
+                            2,
+                            c_str!("read"),
+                        );
+                    }
                 }
             }
             Either::Left(Stmt::Return(v)) => {
