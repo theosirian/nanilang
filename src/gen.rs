@@ -307,6 +307,7 @@ unsafe fn gen_block(
     symbols: &mut HashMap<String, Vec<Symbol>>,
     builder: LLVMBuilderRef,
     parent: LLVMValueRef,
+    looping, Option<(LLVMBasicBlockRef, LLVMBasicBlockRef)><
     stmts: Vec<Either<Stmt, Block>>,
 ) {
     // This deep clones the Vector as far as tested.
