@@ -1,0 +1,15 @@
+def main(): int {
+  let i: int;
+
+  for (i = 0; i < 10; i += 1) {
+    write i;
+  }
+
+  for (i = 0; i < 10; i += 1) {
+    if (i % 2 == 0) {
+      write i;
+    }
+  }
+
+  return 0;
+}

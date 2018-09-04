@@ -1,0 +1,13 @@
+def main(): int {
+  let x = true: bool;
+  
+  if (x == true) {
+    let i: int;
+    read i;
+    write i + 10;
+  } else {
+    write 1337;
+  }
+
+  return 0;
+}

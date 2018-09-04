@@ -96,7 +96,32 @@ unsafe fn flatten_expr(
                 let rhs = flatten_expr(context, module, symbols, builder, *rhs);
                 v.push(LLVMBuildSDiv(builder, lhs, rhs, c_str!("sdiv")));
             }
-            _ => println!("uninplemented!"),
+            Opcode::Mod => {
+                let lhs = flatten_expr(context, module, symbols, builder, *lhs);
+                let rhs = flatten_expr(context, module, symbols, builder, *rhs);
+                v.push(LLVMBuildSRem(builder, lhs, rhs, c_str!("srem")));
+            }
+            Opcode::Lesser
+            | Opcode::LesserOrEqual
+            | Opcode::Greater
+            | Opcode::GreaterOrEqual
+            | Opcode::Equal
+            | Opcode::Different => {
+                let lhs = flatten_expr(context, module, symbols, builder, *lhs);
+                let rhs = flatten_expr(context, module, symbols, builder, *rhs);
+                v.push(LLVMBuildICmp(builder, op.pred(), lhs, rhs, c_str!("cmp")));
+            }
+            Opcode::And => {
+                let lhs = flatten_expr(context, module, symbols, builder, *lhs);
+                let rhs = flatten_expr(context, module, symbols, builder, *rhs);
+                v.push(LLVMBuildAnd(builder, lhs, rhs, c_str!("and")));
+            }
+            Opcode::Or => {
+                let lhs = flatten_expr(context, module, symbols, builder, *lhs);
+                let rhs = flatten_expr(context, module, symbols, builder, *rhs);
+                v.push(LLVMBuildOr(builder, lhs, rhs, c_str!("or")));
+            }
+            _ => panic!("IMPOSSIBURU! Opcode<{:?}> is unary!", op),
         },
         Expr::Call(n, None) => {
             let called_fn = LLVMGetNamedFunction(module, as_str!(n));
@@ -123,7 +148,7 @@ unsafe fn flatten_expr(
             v.push(LLVMBuildNot(builder, rhs, c_str!("not")));
         }
         Expr::Right(o, _) => {
-            panic!("<{:?}> is an invalid right operator! ", o);
+            panic!("IMPOSSIBURU! Opcode<{:?}> is binary!", o);
         }
         _ => println!("uninplemented!"),
     }
@@ -222,21 +247,58 @@ unsafe fn global_add_func(
         LLVMAddFunction(module, c_str!("scanf"), fn_type);
     }
 
-    for i in b.decl {
+    gen_decl(context, module, symbols, builder, function, b.decl, false);
+    gen_block(context, module, symbols, builder, function, b.commands);
+
+    LLVMDisposeBuilder(builder);
+    let new_symbol = Symbol::Func(n.clone());
+    symbols.entry(n).or_insert(Vec::new()).push(new_symbol);
+}
+unsafe fn gen_decl(
+    context: LLVMContextRef,
+    module: LLVMModuleRef,
+    symbols: &mut HashMap<String, Vec<Symbol>>,
+    builder: LLVMBuilderRef,
+    parent: LLVMValueRef,
+    decl: Vec<Decl>,
+    allow_fn: bool,
+) {
+    for i in decl {
         match i {
             Decl::Single(n, t, e) => local_add_variable(context, module, symbols, builder, n, t, e),
             Decl::Array(n, t, s, e) => {
                 local_add_array(context, module, symbols, builder, n, t, s, e)
             }
-            _ => println!("uninplemented!"),
+            Decl::Func(_, _, _, _) => {
+                if allow_fn {
+                    println!("unimplemented");
+                } else {
+                    panic!("Functions are not allowed here!");
+                }
+            }
         }
     }
+}
 
-    gen_block(context, module, symbols, builder, b.commands);
-    //for i in b.stmt {}
-    LLVMDisposeBuilder(builder);
-    let new_symbol = Symbol::Func(n.clone());
-    symbols.entry(n).or_insert(Vec::new()).push(new_symbol);
+unsafe fn build_attr(
+    context: LLVMContextRef,
+    module: LLVMModuleRef,
+    symbols: &HashMap<String, Vec<Symbol>>,
+    builder: LLVMBuilderRef,
+    v: String,
+    e: Expr,
+) -> Result<(), String> {
+    if let Some(vec) = symbols.get(&v) {
+        if let Some(Symbol::Variable(mut var)) = vec.last() {
+            let flattened = flatten_expr(context, module, &symbols, builder, e);
+            LLVMBuildStore(builder, flattened, var);
+            Ok(())
+        } else {
+            Err(format!("Variable <{:?}> is used but not declared!", v))
+        }
+    } else {
+        Err(format!("Variable <{:?}> is used but not declared!", v))
+    }
 }
 
 unsafe fn gen_block(
@@ -244,22 +306,16 @@ unsafe fn gen_block(
     module: LLVMModuleRef,
     symbols: &mut HashMap<String, Vec<Symbol>>,
     builder: LLVMBuilderRef,
-    stmt: Vec<Either<Stmt, Block>>,
+    parent: LLVMValueRef,
+    stmts: Vec<Either<Stmt, Block>>,
 ) {
     // This deep clones the Vector as far as tested.
     let mut my_symbols = symbols.clone();
-    for i in stmt {
+    for i in stmts {
         match i {
             Either::Left(Stmt::Attr(Variable::Single(v), e)) => {
-                if let Some(vec) = my_symbols.get(&v) {
-                    if let Some(Symbol::Variable(mut var)) = vec.last() {
-                        let flattened = flatten_expr(context, module, &my_symbols, builder, *e);
-                        LLVMBuildStore(builder, flattened, var);
-                    } else {
-                        panic!("Variable <{:?}> is used but not declared!", v);
-                    }
-                } else {
-                    panic!("Variable <{:?}> is used but not declared!", v);
+                if let Err(s) = build_attr(context, module, &my_symbols, builder, v, *e) {
+                    panic!(s);
                 }
             }
             Either::Left(Stmt::Write(vec)) => {
@@ -301,6 +357,150 @@ unsafe fn gen_block(
                     LLVMBuildRetVoid(builder);
                 }
             }
+            Either::Left(Stmt::If(cond, then, else_ifs, None)) => {
+                let then_block = LLVMAppendBasicBlock(parent, c_str!("then"));
+                let merge = LLVMAppendBasicBlock(parent, c_str!("merge"));
+
+                let cond = flatten_expr(context, module, &my_symbols, builder, *cond);
+                LLVMBuildCondBr(builder, cond, then_block, merge);
+
+                // Build True Branch
+                LLVMPositionBuilderAtEnd(builder, then_block);
+                gen_decl(
+                    context,
+                    module,
+                    &mut my_symbols,
+                    builder,
+                    parent,
+                    then.decl,
+                    false,
+                );
+                gen_block(
+                    context,
+                    module,
+                    &mut my_symbols,
+                    builder,
+                    parent,
+                    then.commands,
+                );
+                LLVMBuildBr(builder, merge);
+
+                // Build Merge Branch
+                LLVMPositionBuilderAtEnd(builder, merge);
+            }
+            Either::Left(Stmt::If(cond, then, else_ifs, Some(_else))) => {
+                let then_block = LLVMAppendBasicBlock(parent, c_str!("then"));
+                let else_block = LLVMAppendBasicBlock(parent, c_str!("else"));
+                let merge = LLVMAppendBasicBlock(parent, c_str!("merge"));
+
+                let cond = flatten_expr(context, module, &my_symbols, builder, *cond);
+                LLVMBuildCondBr(builder, cond, then_block, else_block);
+
+                // Build True Branch
+                LLVMPositionBuilderAtEnd(builder, then_block);
+                gen_decl(
+                    context,
+                    module,
+                    &mut my_symbols,
+                    builder,
+                    parent,
+                    then.decl,
+                    false,
+                );
+                gen_block(
+                    context,
+                    module,
+                    &mut my_symbols,
+                    builder,
+                    parent,
+                    then.commands,
+                );
+                LLVMBuildBr(builder, merge);
+
+                // Build False Branch
+                LLVMPositionBuilderAtEnd(builder, else_block);
+                gen_decl(
+                    context,
+                    module,
+                    &mut my_symbols,
+                    builder,
+                    parent,
+                    _else.decl,
+                    false,
+                );
+                gen_block(
+                    context,
+                    module,
+                    &mut my_symbols,
+                    builder,
+                    parent,
+                    _else.commands,
+                );
+                LLVMBuildBr(builder, merge);
+
+                // Build Merge Branch
+                LLVMPositionBuilderAtEnd(builder, merge);
+            }
+
+            Either::Left(Stmt::For(init, cond, step, block)) => {
+                let init_block = LLVMAppendBasicBlock(parent, c_str!("init_loop"));
+                let loop_block = LLVMAppendBasicBlock(parent, c_str!("loop"));
+                let exit_block = LLVMAppendBasicBlock(parent, c_str!("exit_loop"));
+
+                let init = *init;
+                // Build attribution before entering init_block
+                if let Stmt::Attr(Variable::Single(v), e) = init {
+                    if let Err(s) = build_attr(context, module, &my_symbols, builder, v, *e) {
+                        panic!(s);
+                    }
+                } else if let Stmt::Attr(Variable::Array(v, i), e) = init {
+                    println!("uninplemented!");
+                } else {
+                    panic!("invalid state");
+                }
+                LLVMBuildBr(builder, init_block);
+
+                let step = *step;
+                // Position builder at init_block (where we check for condition)
+                LLVMPositionBuilderAtEnd(builder, init_block);
+                if let Stmt::Attr(Variable::Single(v), e) = step {
+                    if let Err(s) = build_attr(context, module, &my_symbols, builder, v, *e) {
+                        panic!(s);
+                    }
+                } else if let Stmt::Attr(Variable::Array(v, i), e) = step {
+                    println!("uninplemented!");
+                } else {
+                    panic!("invalid state");
+                }
+
+                // Build condition inside init_block
+                let cond = flatten_expr(context, module, &my_symbols, builder, *cond);
+                LLVMBuildCondBr(builder, cond, loop_block, exit_block);
+
+                // Position at loop to build loop's instructions
+                LLVMPositionBuilderAtEnd(builder, loop_block);
+                gen_decl(
+                    context,
+                    module,
+                    &mut my_symbols,
+                    builder,
+                    parent,
+                    block.decl,
+                    false,
+                );
+                gen_block(
+                    context,
+                    module,
+                    &mut my_symbols,
+                    builder,
+                    parent,
+                    block.commands,
+                );
+                LLVMBuildBr(builder, init_block);
+
+                // Continue at exit_loop
+                LLVMPositionBuilderAtEnd(builder, exit_block);
+            }
             Either::Left(_) => println!("uninplemented!"),
             Either::Right(b) => {
                 for i in b.decl {
@@ -314,7 +514,14 @@ unsafe fn gen_block(
                         _ => panic!("Cannot declare functions inside functions!"),
                     }
                 }
-                gen_block(context, module, &mut my_symbols, builder, b.commands)
+                gen_block(
+                    context,
+                    module,
+                    &mut my_symbols,
+                    builder,
+                    parent,
+                    b.commands,
+                )
             }
         }
     }

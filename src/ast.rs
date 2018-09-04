@@ -1,3 +1,4 @@
+use llvm::LLVMIntPredicate;
 use std::fmt;
 
 #[macro_export]
@@ -140,6 +141,20 @@ impl fmt::Debug for Expr {
                 _f,
                 tabs = tabs,
             ),
+        }
+    }
+}
+
+impl Opcode {
+    pub fn pred(&self) -> LLVMIntPredicate {
+        match self {
+            Opcode::Lesser => LLVMIntPredicate::LLVMIntSLT,
+            Opcode::LesserOrEqual => LLVMIntPredicate::LLVMIntSLE,
+            Opcode::Greater => LLVMIntPredicate::LLVMIntSGT,
+            Opcode::GreaterOrEqual => LLVMIntPredicate::LLVMIntSGE,
+            Opcode::Equal => LLVMIntPredicate::LLVMIntEQ,
+            Opcode::Different => LLVMIntPredicate::LLVMIntNE,
+            _ => panic!("Opcode does not have intpredicate!"),
         }
     }
 }
