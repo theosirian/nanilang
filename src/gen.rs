@@ -441,9 +441,8 @@ unsafe fn gen_block(
                 // Build Merge Branch
                 LLVMPositionBuilderAtEnd(builder, merge);
             }
-
             Either::Left(Stmt::For(init, cond, step, block)) => {
-                let init_block = LLVMAppendBasicBlock(parent, c_str!("init_loop"));
+                let cond_block = LLVMAppendBasicBlock(parent, c_str!("cond_loop"));
                 let loop_block = LLVMAppendBasicBlock(parent, c_str!("loop"));
                 let exit_block = LLVMAppendBasicBlock(parent, c_str!("exit_loop"));
 
@@ -458,22 +457,10 @@ unsafe fn gen_block(
                 } else {
                     panic!("invalid state");
                 }
-                LLVMBuildBr(builder, init_block);
+                LLVMBuildBr(builder, cond_block);
 
-                let step = *step;
-                // Position builder at init_block (where we check for condition)
-                LLVMPositionBuilderAtEnd(builder, init_block);
-                if let Stmt::Attr(Variable::Single(v), e) = step {
-                    if let Err(s) = build_attr(context, module, &my_symbols, builder, v, *e) {
-                        panic!(s);
-                    }
-                } else if let Stmt::Attr(Variable::Array(v, i), e) = step {
-                    println!("uninplemented!");
-                } else {
-                    panic!("invalid state");
-                }
-
-                // Build condition inside init_block
+                // Build condition inside cond_block
+                LLVMPositionBuilderAtEnd(builder, cond_block);
                 let cond = flatten_expr(context, module, &my_symbols, builder, *cond);
                 LLVMBuildCondBr(builder, cond, loop_block, exit_block);
 
@@ -496,11 +483,61 @@ unsafe fn gen_block(
                     parent,
                     block.commands,
                 );
-                LLVMBuildBr(builder, init_block);
+
+                // Add step to end of loop block
+                let step = *step;
+                if let Stmt::Attr(Variable::Single(v), e) = step {
+                    if let Err(s) = build_attr(context, module, &my_symbols, builder, v, *e) {
+                        panic!(s);
+                    }
+                } else if let Stmt::Attr(Variable::Array(v, i), e) = step {
+                    println!("uninplemented!");
+                } else {
+                    panic!("invalid state");
+                }
+                LLVMBuildBr(builder, cond_block);
 
                 // Continue at exit_loop
                 LLVMPositionBuilderAtEnd(builder, exit_block);
             }
+
+            Either::Left(Stmt::While(cond, block)) => {
+                let cond_block = LLVMAppendBasicBlock(parent, c_str!("cond_loop"));
+                let loop_block = LLVMAppendBasicBlock(parent, c_str!("loop"));
+                let exit_block = LLVMAppendBasicBlock(parent, c_str!("exit_loop"));
+
+                LLVMBuildBr(builder, cond_block);
+
+                LLVMPositionBuilderAtEnd(builder, cond_block);
+                // Build condition inside cond_block
+                let cond = flatten_expr(context, module, &my_symbols, builder, *cond);
+                LLVMBuildCondBr(builder, cond, loop_block, exit_block);
+
+                // Position at loop to build loop's instructions
+                LLVMPositionBuilderAtEnd(builder, loop_block);
+                gen_decl(
+                    context,
+                    module,
+                    &mut my_symbols,
+                    builder,
+                    parent,
+                    block.decl,
+                    false,
+                );
+                gen_block(
+                    context,
+                    module,
+                    &mut my_symbols,
+                    builder,
+                    parent,
+                    block.commands,
+                );
+                LLVMBuildBr(builder, cond_block);
+
+                // Continue at exit_loop
+                LLVMPositionBuilderAtEnd(builder, exit_block);
+            }
+
             Either::Left(_) => println!("uninplemented!"),
             Either::Right(b) => {
                 for i in b.decl {
