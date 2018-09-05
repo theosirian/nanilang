@@ -4,6 +4,7 @@ use llvm::prelude::*;
 
 use std::collections::HashMap;
 use std::ffi::*;
+use std::iter;
 use std::ptr;
 
 macro_rules! c_str {
@@ -34,15 +35,24 @@ macro_rules! as_str {
 enum Symbol {
     Variable(LLVMValueRef),
     Array(u32, LLVMValueRef),
+    ArrayRef(LLVMValueRef),
     Func(String),
 }
 
 unsafe fn gen_type(context: LLVMContextRef, t: Option<Type>) -> LLVMTypeRef {
     match t {
         Some(Type::Bool) => LLVMInt1TypeInContext(context),
-        Some(Type::Int) => LLVMInt64TypeInContext(context),
+        Some(Type::Int) => LLVMInt32TypeInContext(context),
         Some(Type::Str) => panic!("Do not use gen_type with Strings!"),
         None => LLVMVoidTypeInContext(context),
+    }
+}
+
+unsafe fn gen_array_type(context: LLVMContextRef, t: Type) -> LLVMTypeRef {
+    match t {
+        Type::Bool => LLVMPointerType(LLVMInt1TypeInContext(context), 0),
+        Type::Int => LLVMPointerType(LLVMInt64TypeInContext(context), 0),
+        Type::Str => panic!("Do not use gen_array_type with Strings!"),
     }
 }
 
@@ -62,6 +72,41 @@ unsafe fn flatten_expr(
             if let Some(vec) = symbols.get(&s) {
                 if let Some(Symbol::Variable(mut var)) = vec.last().clone() {
                     v.push(LLVMBuildLoad(builder, var, c_str!("flat")));
+                } else {
+                    panic!("Variable <{:?}> is used but not declared!", s);
+                }
+            } else {
+                panic!("Variable <{:?}> is used but not declared!", s);
+            }
+        }
+        Expr::Variable(Variable::Array(s, e)) => {
+            if let Some(vec) = symbols.get(&s) {
+                if let Some(Symbol::ArrayRef(mut var)) = vec.last().clone() {
+                    let flattened = flatten_expr(context, module, &symbols, builder, *e);
+                    let arr_at = LLVMBuildGEP(
+                        builder,
+                        var,
+                        [
+                            flattened,
+                            LLVMConstInt(gen_type(context, Some(Type::Int)), 0, 1),
+                        ].as_mut_ptr(),
+                        2,
+                        c_str!("arr"),
+                    );
+                    v.push(LLVMBuildLoad(builder, arr_at, c_str!("flat")));
+                } else if let Some(Symbol::Array(_, mut var)) = vec.last().clone() {
+                    let flattened = flatten_expr(context, module, &symbols, builder, *e);
+                    let arr_at = LLVMBuildGEP(
+                        builder,
+                        var,
+                        [
+                            flattened,
+                            LLVMConstInt(gen_type(context, Some(Type::Int)), 0, 1),
+                        ].as_mut_ptr(),
+                        2,
+                        c_str!("arr"),
+                    );
+                    v.push(LLVMBuildLoad(builder, arr_at, c_str!("flat")));
                 } else {
                     panic!("Variable <{:?}> is used but not declared!", s);
                 }
@@ -125,11 +170,10 @@ unsafe fn flatten_expr(
         },
         Expr::Call(n, None) => {
             let called_fn = LLVMGetNamedFunction(module, as_str!(n));
-            let mut args = [];
             v.push(LLVMBuildCall(
                 builder,
                 called_fn,
-                args.as_mut_ptr(),
+                [].as_mut_ptr(),
                 0,
                 c_str!("fn_call"),
             ));
@@ -174,6 +218,8 @@ unsafe fn local_add_variable(
     if let Some(e) = e {
         let flattened = flatten_expr(context, module, symbols, builder, *e);
         LLVMBuildStore(builder, flattened, decl);
+    } else {
+        LLVMBuildStore(builder, LLVMConstInt(t, 0, 1), decl);
     }
     let new_symbol = Symbol::Variable(decl);
     symbols.entry(n).or_insert(Vec::new()).push(new_symbol);
@@ -193,15 +239,63 @@ unsafe fn local_add_array(
     let array_type = LLVMArrayType(t, s as u32);
     let decl = LLVMBuildArrayAlloca(builder, array_type, LLVMConstInt(t, 0, 1), as_str!(n));
     if let Some(e) = e {
-        let mut args = e
-            .iter()
-            .map(|b| match **b {
-                Expr::Number(e) => LLVMConstInt(t, e, 1),
+        for (i, e) in e.iter().enumerate() {
+            match **e {
+                Expr::Number(e) => {
+                    let ptr = LLVMBuildGEP(
+                        builder,
+                        decl,
+                        [
+                            LLVMConstInt(gen_type(context, Some(Type::Int)), i as u64, 1),
+                            LLVMConstInt(gen_type(context, Some(Type::Int)), 0, 1),
+                        ].as_mut_ptr(),
+                        2,
+                        c_str!("ptr_get"),
+                    );
+                    LLVMBuildStore(builder, LLVMConstInt(t, e, 1), ptr);
+                }
+                Expr::True => {
+                    let ptr = LLVMBuildGEP(
+                        builder,
+                        decl,
+                        [
+                            LLVMConstInt(gen_type(context, Some(Type::Int)), i as u64, 1),
+                            LLVMConstInt(gen_type(context, Some(Type::Int)), 0, 1),
+                        ].as_mut_ptr(),
+                        2,
+                        c_str!("ptr_get"),
+                    );
+                    LLVMBuildStore(builder, LLVMConstInt(t, 1, 1), ptr);
+                }
+                Expr::False => {
+                    let ptr = LLVMBuildGEP(
+                        builder,
+                        decl,
+                        [
+                            LLVMConstInt(gen_type(context, Some(Type::Int)), i as u64, 1),
+                            LLVMConstInt(gen_type(context, Some(Type::Int)), 0, 1),
+                        ].as_mut_ptr(),
+                        2,
+                        c_str!("ptr_get"),
+                    );
+                    LLVMBuildStore(builder, LLVMConstInt(t, 0, 1), ptr);
+                }
                 _ => panic!("Cannot initialize global value with non-const expresion!"),
-            })
-            .collect::<Vec<_>>();
-        let values = LLVMConstArray(array_type, args.as_mut_ptr(), args.len() as u32);
-        LLVMBuildStore(builder, values, decl);
+            };
+        }
+        /*
+         *let mut args = e
+         *    .iter()
+         *    .map(|b| match **b {
+         *        Expr::Number(e) => LLVMConstInt(t, e, 1),
+         *        Expr::True => LLVMConstInt(t, 1, 1),
+         *        Expr::False => LLVMConstInt(t, 0, 1),
+         *        _ => panic!("Cannot initialize global value with non-const expresion!"),
+         *    })
+         *    .collect::<Vec<_>>();
+         *let values = LLVMConstArray(t, args.as_mut_ptr(), args.len() as u32);
+         *LLVMBuildStore(builder, values, decl);
+         */
     }
     let new_symbol = Symbol::Array(s as u32, decl);
     symbols.entry(n).or_insert(Vec::new()).push(new_symbol);
@@ -220,13 +314,42 @@ unsafe fn global_add_func(
     let t = gen_type(context, t);
     let mut args = if let Some(a) = a {
         a.iter()
-            .map(|_| gen_type(context, Some(Type::Int)))
+            .map(|p| match p {
+                FuncParam::Single(n, t) => (n.clone(), true, gen_type(context, Some(t.clone()))),
+                FuncParam::Array(n, t) => (n.clone(), false, gen_array_type(context, t.clone())),
+            })
             .collect::<Vec<_>>()
     } else {
         Vec::new()
     };
-    let function_type = LLVMFunctionType(t, args.as_mut_ptr(), args.len() as u32, 0);
+    let function_type = LLVMFunctionType(
+        t,
+        args.iter().map(|a| a.2).collect::<Vec<_>>().as_mut_ptr(),
+        args.len() as u32,
+        0,
+    );
     let function = LLVMAddFunction(module, as_str!(n), function_type);
+
+    for (i, e) in args.iter().enumerate() {
+        match e.1 {
+            true => {
+                let fn_param = LLVMGetParam(function, i as u32);
+                let new_symbol = Symbol::Variable(fn_param);
+                symbols
+                    .entry(e.0.clone())
+                    .or_insert(Vec::new())
+                    .push(new_symbol);
+            }
+            fals => {
+                let fn_param = LLVMGetParam(function, i as u32);
+                let new_symbol = Symbol::ArrayRef(fn_param);
+                symbols
+                    .entry(e.0.clone())
+                    .or_insert(Vec::new())
+                    .push(new_symbol);
+            }
+        }
+    }
 
     let entry = LLVMAppendBasicBlockInContext(context, function, c_str!("entry"));
     LLVMPositionBuilderAtEnd(builder, entry);
@@ -248,7 +371,9 @@ unsafe fn global_add_func(
     }
 
     gen_decl(context, module, symbols, builder, function, b.decl, false);
-    gen_block(context, module, symbols, builder, function, b.commands);
+    gen_block(
+        context, module, symbols, builder, function, None, b.commands,
+    );
 
     LLVMDisposeBuilder(builder);
     let new_symbol = Symbol::Func(n.clone());
@@ -307,7 +432,7 @@ unsafe fn gen_block(
     symbols: &mut HashMap<String, Vec<Symbol>>,
     builder: LLVMBuilderRef,
     parent: LLVMValueRef,
-    looping, Option<(LLVMBasicBlockRef, LLVMBasicBlockRef)><
+    looping: Option<(LLVMBasicBlockRef, LLVMBasicBlockRef)>,
     stmts: Vec<Either<Stmt, Block>>,
 ) {
     // This deep clones the Vector as far as tested.
@@ -350,6 +475,73 @@ unsafe fn gen_block(
                     }
                 }
             }
+            Either::Left(Stmt::Read(Variable::Array(v, e))) => {
+                if let Some(vec) = my_symbols.get(&v) {
+                    if let Some(Symbol::ArrayRef(mut var)) = vec.last() {
+                        let flattened = flatten_expr(context, module, &my_symbols, builder, *e);
+                        let arr_at = LLVMBuildGEP(
+                            builder,
+                            var,
+                            [
+                                LLVMConstInt(gen_type(context, Some(Type::Int)), 0, 1),
+                                flattened,
+                            ].as_mut_ptr(),
+                            2,
+                            c_str!("arr"),
+                        );
+                        let format_str = LLVMGetNamedGlobal(module, c_str!("format_int"));
+                        let mut scanf_args = [format_str, arr_at];
+                        let scanf_fn = LLVMGetNamedFunction(module, c_str!("scanf"));
+                        LLVMBuildCall(
+                            builder,
+                            scanf_fn,
+                            scanf_args.as_mut_ptr(),
+                            2,
+                            c_str!("read"),
+                        );
+                    } else if let Some(Symbol::Array(_, mut var)) = vec.last() {
+                        let flattened = flatten_expr(context, module, &my_symbols, builder, *e);
+                        let arr_at = LLVMBuildGEP(
+                            builder,
+                            var,
+                            [
+                                LLVMConstInt(gen_type(context, Some(Type::Int)), 0, 1),
+                                flattened,
+                            ].as_mut_ptr(),
+                            2,
+                            c_str!("arr"),
+                        );
+                        let format_str = LLVMGetNamedGlobal(module, c_str!("format_int"));
+                        let mut scanf_args = [format_str, arr_at];
+                        let scanf_fn = LLVMGetNamedFunction(module, c_str!("scanf"));
+                        LLVMBuildCall(
+                            builder,
+                            scanf_fn,
+                            scanf_args.as_mut_ptr(),
+                            2,
+                            c_str!("read"),
+                        );
+                    }
+                }
+            }
+            Either::Left(Stmt::Call(n, None)) => {
+                let called_fn = LLVMGetNamedFunction(module, as_str!(n));
+                LLVMBuildCall(builder, called_fn, [].as_mut_ptr(), 0, c_str!(""));
+            }
+            Either::Left(Stmt::Skip) => {
+                if let Some((skip, _)) = looping {
+                    LLVMBuildBr(builder, skip);
+                } else {
+                    panic!("cannot use skip outside of a loop");
+                }
+            }
+            Either::Left(Stmt::Stop) => {
+                if let Some((_, stop)) = looping {
+                    LLVMBuildBr(builder, stop);
+                } else {
+                    panic!("cannot use skip outside of a loop");
+                }
+            }
             Either::Left(Stmt::Return(v)) => {
                 if let Some(v) = v {
                     let flattened = flatten_expr(context, module, &my_symbols, builder, *v);
@@ -382,6 +574,7 @@ unsafe fn gen_block(
                     &mut my_symbols,
                     builder,
                     parent,
+                    looping,
                     then.commands,
                 );
                 LLVMBuildBr(builder, merge);
@@ -414,6 +607,7 @@ unsafe fn gen_block(
                     &mut my_symbols,
                     builder,
                     parent,
+                    looping,
                     then.commands,
                 );
                 LLVMBuildBr(builder, merge);
@@ -435,6 +629,7 @@ unsafe fn gen_block(
                     &mut my_symbols,
                     builder,
                     parent,
+                    looping,
                     _else.commands,
                 );
                 LLVMBuildBr(builder, merge);
@@ -445,6 +640,7 @@ unsafe fn gen_block(
             Either::Left(Stmt::For(init, cond, step, block)) => {
                 let cond_block = LLVMAppendBasicBlock(parent, c_str!("cond_loop"));
                 let loop_block = LLVMAppendBasicBlock(parent, c_str!("loop"));
+                let step_block = LLVMAppendBasicBlock(parent, c_str!("step"));
                 let exit_block = LLVMAppendBasicBlock(parent, c_str!("exit_loop"));
 
                 let init = *init;
@@ -482,9 +678,12 @@ unsafe fn gen_block(
                     &mut my_symbols,
                     builder,
                     parent,
+                    Some((step_block, exit_block)),
                     block.commands,
                 );
+                LLVMBuildBr(builder, step_block);
 
+                LLVMPositionBuilderAtEnd(builder, step_block);
                 // Add step to end of loop block
                 let step = *step;
                 if let Stmt::Attr(Variable::Single(v), e) = step {
@@ -531,6 +730,7 @@ unsafe fn gen_block(
                     &mut my_symbols,
                     builder,
                     parent,
+                    Some((cond_block, exit_block)),
                     block.commands,
                 );
                 LLVMBuildBr(builder, cond_block);
@@ -558,6 +758,7 @@ unsafe fn gen_block(
                     &mut my_symbols,
                     builder,
                     parent,
+                    looping,
                     b.commands,
                 )
             }
@@ -603,11 +804,13 @@ unsafe fn global_add_array(
         let mut args = e
             .iter()
             .map(|b| match **b {
-                Expr::Number(e) => LLVMConstInt(t, e, 0),
+                Expr::Number(e) => LLVMConstInt(t, e, 1),
+                Expr::True => LLVMConstInt(t, 1, 1),
+                Expr::False => LLVMConstInt(t, 0, 1),
                 _ => panic!("Cannot initialize global value with non-const expresion!"),
             })
             .collect::<Vec<_>>();
-        let values = LLVMConstArray(array_type, args.as_mut_ptr(), args.len() as u32);
+        let values = LLVMConstArray(t, args.as_mut_ptr(), args.len() as u32);
         LLVMSetInitializer(decl, values);
     }
     let new_symbol = Symbol::Array(s as u32, decl);

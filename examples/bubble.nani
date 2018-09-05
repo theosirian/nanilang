@@ -1,0 +1,29 @@
+var v[10] = {10, 9, 8, 7, 6, 5, 4, 3, 2, 1}: int;
+
+def bubblesort(v[]: int; n: int) {
+    var i=0, j: int;
+    var trocou = true: bool;
+
+    while (i < n-1 && trocou) {
+        trocou = false;
+        for (j=0; j<(n-i-1); j+=1) {
+            if (v[j] > v[j+1]) {
+                var aux = v[j]: int;
+                v[j] = v[j+1];
+                v[j+1] = aux;
+                trocou = true;
+            }
+        }
+        i += 1;
+    }
+}
+
+def main(): int {
+    var i: int;
+
+    bubblesort(v, 10);
+
+    for (i=0; i<10; i+=1) {
+        write v[i];
+    }
+}

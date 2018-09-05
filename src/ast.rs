@@ -22,6 +22,7 @@ fn get_tabs(f: &fmt::Formatter) -> (usize, String) {
     (width, "   ".repeat(width))
 }
 
+#[derive(Clone)]
 pub enum Expr {
     Number(u64),
     Variable(Variable),
@@ -33,6 +34,7 @@ pub enum Expr {
     Ternary(Box<Expr>, Box<Expr>, Box<Expr>),
 }
 
+#[derive(Clone)]
 pub enum Opcode {
     Negative,
 
@@ -69,7 +71,7 @@ pub enum Type {
 #[derive(Clone)]
 pub enum Variable {
     Single(String),
-    Array(String, u64),
+    Array(String, Box<Expr>),
 }
 
 pub enum Decl {

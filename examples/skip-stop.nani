@@ -1,0 +1,13 @@
+def main(): int {
+  var i: int;
+  for (i = 0; i < 30; i += 1) {
+    if (i == 20) {
+      stop;
+    }
+    if (i % 2 == 0) {
+      skip;
+    }
+    write i;
+  }
+  return 0;
+}

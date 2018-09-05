@@ -6,34 +6,58 @@ use ast::*;
 grammar<'err>(errors: &'err mut Vec<ErrorRecovery<usize, Token<'input>, &'static str>>);
 
 match {
-    "bool" => BOOL,
-    "def" => DEF,
-    "else" => ELSE,
-    "false" => FALSE,
-    "for" => FOR,
-    "if" => IF,
-    "int" => INT,
-    "let" => LET,
-    "read" => READ,
-    "return" => RETURN,
-    "skip" => SKIP,
-    "stop" => STOP,
-    "str" => STR,
-    "true" => TRUE,
-    "while" => WHILE,
-    "write" => WRITE,
+  "bool" => BOOL,
+  "def" => DEF,
+  "else" => ELSE,
+  "false" => FALSE,
+  "for" => FOR,
+  "if" => IF,
+  "int" => INT,
+  r"(let|var)" => LET,
+  "read" => READ,
+  "return" => RETURN,
+  r"(skip|continue)" => SKIP,
+  r"(stop|break)" => STOP,
+  "str" => STR,
+  "true" => TRUE,
+  "while" => WHILE,
+  "write" => WRITE,
+
+  "[" => OPEN_BRACKET,
+  "]" => CLOSE_BRACKET,
+  "(" => OPEN_PARENS,
+  ")" => CLOSE_PARENS,
+  "{" => OPEN_BRACE,
+  "}" => CLOSE_BRACE,
+
+  "," => COMMA,
+  ":" => COLON,
+  ";" => SEMICOLON,
+
+  "+" => PLUS,
+  "-" => MINUS,
+  "*" => ASTERISK,
+  "/" => SLASH,
+  "%" => PERCENT,
+  "=" => EQUAL,
+
+  "<" => LESS,
+  ">" => GREATER,
+
+  "!" => EXCLAMATION,
+  "?" => QUESTION,
+
+  "&" => AMPERSAND,
+  "|" => PIPE,
 } else {
     _
 }
 
-Num: u64 = {
-    r"[0-9]+" => u64::from_str(<>).unwrap(),
-};
-
+Num: u64 = r"[0-9]+" => u64::from_str(<>).unwrap();
 Id: String = r"[a-zA-Z_][a-zA-Z0-9_]*" => String::from(<>);
 
 Var: Variable = {
-    <Id> "[" <Num> "]" => Variable::Array(<>),
+    <Id> OPEN_BRACKET <Expr> CLOSE_BRACKET => Variable::Array(<>),
     <Id> => Variable::Single(<>),
 };
 
@@ -43,7 +67,7 @@ Tier<Op, Next>: Box<Expr> = {
 };
 
 Comma<T>: Vec<T> = {
-    <v:(<T> ",")*> <e:T> => {
+    <v:(<T> COMMA)*> <e:T> => {
         let mut v = v;
         v.push(e);
         v
@@ -51,7 +75,7 @@ Comma<T>: Vec<T> = {
 };
 
 SemiColon<T>: Vec<T> = {
-    <v:(<T> ";")*> <e:T> => {
+    <v:(<T> SEMICOLON)*> <e:T> => {
         let mut v = v;
         v.push(e);
         v
@@ -68,61 +92,61 @@ Term: Box<Expr> = {
     FALSE => Box::new(Expr::False),
     Num => Box::new(Expr::Number(<>)),
     Var => Box::new(Expr::Variable(<>)),
-    <Id> "(" <Comma<Expr>?> ")" => Box::new(Expr::Call(<>)),
-    "(" <Expr> ")",
+    <Id> OPEN_PARENS <Comma<Expr>?> CLOSE_PARENS => Box::new(Expr::Call(<>)),
+    OPEN_PARENS <Expr> CLOSE_PARENS,
 };
 
-NegativeOp: Opcode = "-" => Opcode::Negative;
+NegativeOp: Opcode = MINUS => Opcode::Negative;
 Negative: Box<Expr> = {
     NegativeOp Term => Box::new(Expr::Right(<>)),
     Term,
 };
 
-NotOp: Opcode = "!" => Opcode::Not;
+NotOp: Opcode = EXCLAMATION => Opcode::Not;
 Not: Box<Expr> = {
     NotOp Negative=> Box::new(Expr::Right(<>)),
     Negative,
 };
 
 FactorOp: Opcode = {
-    "*" => Opcode::Mul,
-    "/" => Opcode::Div,
-    "%" => Opcode::Mod,
+    ASTERISK => Opcode::Mul,
+    SLASH => Opcode::Div,
+    PERCENT => Opcode::Mod,
 };
 Factor = Tier<FactorOp, Not>;
 
 LinearOp: Opcode = {
-    "+" => Opcode::Add,
-    "-" => Opcode::Sub,
+    PLUS => Opcode::Add,
+    MINUS => Opcode::Sub,
 };
 Linear = Tier<LinearOp, Factor>;
 
 LesserOp: Opcode = {
-    "<=" => Opcode::LesserOrEqual,
-    "<" => Opcode::Lesser,
+    LESS EQUAL => Opcode::LesserOrEqual,
+    LESS => Opcode::Lesser,
 };
 Lesser = Tier<LesserOp, Linear>;
 
 GreaterOp: Opcode = {
-    ">=" => Opcode::GreaterOrEqual,
-    ">" => Opcode::Greater,
+    GREATER EQUAL => Opcode::GreaterOrEqual,
+    GREATER => Opcode::Greater,
 };
 Greater = Tier<GreaterOp, Lesser>;
 
 EqualityOp: Opcode = {
-    "==" => Opcode::Equal,
-    "!=" => Opcode::Different,
+    EQUAL EQUAL => Opcode::Equal,
+    EXCLAMATION EQUAL => Opcode::Different,
 };
 Equality = Tier<EqualityOp, Greater>;
 
-AndOp: Opcode = "&&" => Opcode::And;
+AndOp: Opcode = AMPERSAND AMPERSAND => Opcode::And;
 And = Tier<AndOp, Equality>;
 
-OrOp: Opcode = "||" => Opcode::Or;
+OrOp: Opcode = PIPE PIPE => Opcode::Or;
 Or = Tier<OrOp, And>;
 
 Ternary: Box<Expr> = {
-    <Or> "?" <Or> ":" <Expr> => Box::new(Expr::Ternary(<>)),
+    <Or> QUESTION <Or> COLON <Expr> => Box::new(Expr::Ternary(<>)),
     Or,
 };
 
@@ -135,19 +159,19 @@ Type: Type = {
 };
 
 VarArrayDecl: (String, u64, Option<Vec<Box<Expr>>>) = {
-    <a:Id> "[" <n:Num> "]" "=" "{" <f:Comma<Expr>> "}" => (a, n, Some(f)),
-    <a:Id> "[" <n:Num> "]" => (a, n, None),
+    <a:Id> OPEN_BRACKET <n:Num> CLOSE_BRACKET EQUAL OPEN_BRACE <f:Comma<Expr>> CLOSE_BRACE => (a, n, Some(f)),
+    <a:Id> OPEN_BRACKET <n:Num> CLOSE_BRACKET => (a, n, None),
 };
 
 VarSingleDecl: (String, Option<Box<Expr>>) = {
-    <i:Id> "=" <e:Expr> => (i, Some(e)),
+    <i:Id> EQUAL <e:Expr> => (i, Some(e)),
     <Id> => (<>, None),
 };
 
 VarDeclList = Comma<Either<VarSingleDecl, VarArrayDecl>>;
 
 VarDecl: Vec<Decl> = {
-    LET <d:VarDeclList> ":" <t:Type> ";" => {
+    LET <d:VarDeclList> COLON <t:Type> SEMICOLON => {
         let mut f = Vec::new();
         for i in d {
             if let Some(j) = i.0 {
@@ -161,7 +185,7 @@ VarDecl: Vec<Decl> = {
 };
 
 ParamArrayDecl: String = {
-    <Id> "[" "]" => <>,
+    <Id> OPEN_BRACKET CLOSE_BRACKET => <>,
 };
 
 ParamSingleDecl: String = {
@@ -170,7 +194,7 @@ ParamSingleDecl: String = {
 
 ParamDeclList = Comma<Either<ParamSingleDecl, ParamArrayDecl>>;
 
-FuncDecl: Decl = DEF <i:Id> "(" <p:SemiColon<(<ParamDeclList> ":" <Type>)>?> ")" <t:(":" <Type>)?> <b:Block> => {
+FuncDecl: Decl = DEF <i:Id> OPEN_PARENS <p:SemiColon<(<ParamDeclList> COLON <Type>)>?> CLOSE_PARENS <t:(COLON <Type>)?> <b:Block> => {
     let mut v = Vec::new();
     if let Some(p) = p {
         for x in p {
@@ -199,14 +223,14 @@ Attr<O>: (Variable, Box<Expr>)  = {
     <v:Var> <o:O> <e:Expr> => (v.clone(), Box::new(Expr::Op(Box::new(Expr::Variable(v)), o, e))),
 };
 
-AddEqual: Opcode = "+=" => Opcode::Add;
-SubEqual: Opcode = "-=" => Opcode::Add;
-MulEqual: Opcode = "*=" => Opcode::Add;
-DivEqual: Opcode = "/=" => Opcode::Add;
-ModEqual: Opcode = "%=" => Opcode::Add;
+AddEqual: Opcode = PLUS EQUAL => Opcode::Add;
+SubEqual: Opcode = MINUS EQUAL => Opcode::Sub;
+MulEqual: Opcode = ASTERISK EQUAL => Opcode::Mul;
+DivEqual: Opcode = SLASH EQUAL => Opcode::Div;
+ModEqual: Opcode = PERCENT EQUAL => Opcode::Mod;
 
 AllAttr: Stmt = {
-    <v:Var> "=" <e:Expr> => Stmt::Attr(v, e),
+    <v:Var> EQUAL <e:Expr> => Stmt::Attr(v, e),
     <a:Attr<AddEqual>> => Stmt::Attr(a.0, a.1),
     <a:Attr<SubEqual>> => Stmt::Attr(a.0, a.1),
     <a:Attr<MulEqual>> => Stmt::Attr(a.0, a.1),
@@ -215,22 +239,22 @@ AllAttr: Stmt = {
 };
 
 Stmt: Stmt = {
-    <AllAttr> ";" => <>,
+    <AllAttr> SEMICOLON => <>,
 
-    SKIP ";" => Stmt::Skip,
-    STOP ";" => Stmt::Stop,
-    RETURN <Expr?> ";" => Stmt::Return(<>),
+    SKIP SEMICOLON => Stmt::Skip,
+    STOP SEMICOLON => Stmt::Stop,
+    RETURN <Expr?> SEMICOLON => Stmt::Return(<>),
 
-    READ <v:Var> ";" => Stmt::Read(<>),
-    WRITE <Comma<Expr>> ";" => Stmt::Write(<>),
+    READ <v:Var> SEMICOLON => Stmt::Read(<>),
+    WRITE <Comma<Expr>> SEMICOLON => Stmt::Write(<>),
 
-    <Id> "(" <Comma<Expr>?> ")" ";" => Stmt::Call(<>),
+    <Id> OPEN_PARENS <Comma<Expr>?> CLOSE_PARENS SEMICOLON => Stmt::Call(<>),
 
-    IF "(" <Expr> ")" <Block> <(ELSE IF "(" <Expr> ")" <Block>)*> <(ELSE <Block>)?> => Stmt::If(<>),
+    IF OPEN_PARENS <Expr> CLOSE_PARENS <Block> <(ELSE IF OPEN_PARENS <Expr> CLOSE_PARENS <Block>)*> <(ELSE <Block>)?> => Stmt::If(<>),
 
-    WHILE "(" <Expr> ")" <Block> => Stmt::While(<>),
+    WHILE OPEN_PARENS <Expr> CLOSE_PARENS <Block> => Stmt::While(<>),
 
-    FOR "(" <i:AllAttr> ";" <e:Expr> ";" <s:AllAttr> ")" <b:Block> => Stmt::For(Box::new(i), e, Box::new(s), b),
+    FOR OPEN_PARENS <i:AllAttr> SEMICOLON <e:Expr> SEMICOLON <s:AllAttr> CLOSE_PARENS <b:Block> => Stmt::For(Box::new(i), e, Box::new(s), b),
 };
 
 Commands: Either<Stmt, Block> = {
@@ -238,7 +262,7 @@ Commands: Either<Stmt, Block> = {
     <Block> => Either::Right(<>),
 };
 
-Block: Block = "{" <d:Decl*> <c:Commands*> "}" => {
+Block: Block = OPEN_BRACE <d:Decl*> <c:Commands*> CLOSE_BRACE => {
     flatten!(d);
     Block::new(d, c)
 };
