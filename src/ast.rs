@@ -22,7 +22,7 @@ fn get_tabs(f: &fmt::Formatter) -> (usize, String) {
     (width, "   ".repeat(width))
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub enum Expr {
     Number(u64),
     Variable(Variable),
@@ -34,7 +34,7 @@ pub enum Expr {
     Ternary(Box<Expr>, Box<Expr>, Box<Expr>),
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub enum Opcode {
     Negative,
 
@@ -61,30 +61,33 @@ pub enum Opcode {
     Or,
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub enum Type {
     Int,
     Bool,
     Str,
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub enum Variable {
     Single(String),
     Array(String, Box<Expr>),
 }
 
+#[derive(PartialEq)]
 pub enum Decl {
     Single(String, Type, Option<Box<Expr>>),
     Array(String, Type, u64, Option<Vec<Box<Expr>>>),
     Func(String, Option<Type>, Option<Vec<FuncParam>>, Block),
 }
 
+#[derive(PartialEq)]
 pub enum FuncParam {
     Single(String, Type),
     Array(String, Type),
 }
 
+#[derive(PartialEq)]
 pub enum Stmt {
     Attr(Variable, Box<Expr>),
     Stop,
@@ -98,11 +101,13 @@ pub enum Stmt {
     For(Box<Stmt>, Box<Expr>, Box<Stmt>, Block),
 }
 
+#[derive(PartialEq)]
 pub enum Either<A, B> {
     Left(A),
     Right(B),
 }
 
+#[derive(PartialEq)]
 pub struct Block {
     pub decl: Vec<Decl>,
     pub commands: Vec<Either<Stmt, Block>>,
