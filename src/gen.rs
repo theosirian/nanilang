@@ -340,7 +340,7 @@ unsafe fn global_add_func(
                     .or_insert(Vec::new())
                     .push(new_symbol);
             }
-            fals => {
+            false => {
                 let fn_param = LLVMGetParam(function, i as u32);
                 let new_symbol = Symbol::ArrayRef(fn_param);
                 symbols
