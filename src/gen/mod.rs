@@ -1,3 +1,6 @@
+mod array;
+
+use self::array::*;
 use ast::*;
 use llvm::core::*;
 use llvm::prelude::*;
@@ -801,17 +804,7 @@ unsafe fn global_add_array(
     let array_type = LLVMArrayType(t, s as u32);
     let decl = LLVMAddGlobal(module, array_type, as_str!(n));
     if let Some(e) = e {
-        let mut args = e
-            .iter()
-            .map(|b| match **b {
-                Expr::Number(e) => LLVMConstInt(t, e, 1),
-                Expr::True => LLVMConstInt(t, 1, 1),
-                Expr::False => LLVMConstInt(t, 0, 1),
-                _ => panic!("Cannot initialize global value with non-const expresion!"),
-            })
-            .collect::<Vec<_>>();
-        let values = LLVMConstArray(t, args.as_mut_ptr(), args.len() as u32);
-        LLVMSetInitializer(decl, values);
+        LLVMSetInitializer(decl, gen_initial_array(t, e));
     }
     let new_symbol = Symbol::Array(s as u32, decl);
     symbols.entry(n).or_insert(Vec::new()).push(new_symbol);
