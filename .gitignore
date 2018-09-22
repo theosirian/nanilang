@@ -20,3 +20,6 @@ Session.vim
 # llvm outputs
 *.ll
 *.s
+
+# Debug garbage
+.gdb_history
