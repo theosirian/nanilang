@@ -7,31 +7,31 @@ macro_rules! flatten {
         let mut __aux = Vec::new();
         for i in $v {
             let mut i = i;
-            __aux.append(&mut i);
+            __aux.append(&mut i,);
         }
         let $v = __aux;
     };
 }
 
-fn get_tabs(f: &fmt::Formatter) -> (usize, String) {
-    let width = if let Some(width) = f.width() {
+fn get_tabs(f: &fmt::Formatter) -> (usize, String,) {
+    let width = if let Some(width,) = f.width() {
         width
     } else {
         0
     };
-    (width, "   ".repeat(width))
+    (width, "   ".repeat(width,),)
 }
 
 #[derive(Clone, PartialEq)]
 pub enum Expr {
-    Number(u64),
-    Variable(Variable),
+    Number(u64,),
+    Variable(Variable,),
     True,
     False,
-    Call(String, Option<Vec<Box<Expr>>>),
-    Op(Box<Expr>, Opcode, Box<Expr>),
-    Right(Opcode, Box<Expr>),
-    Ternary(Box<Expr>, Box<Expr>, Box<Expr>),
+    Call(String, Option<Vec<Box<Expr,>,>,>,),
+    Op(Box<Expr,>, Opcode, Box<Expr,>,),
+    Right(Opcode, Box<Expr,>,),
+    Ternary(Box<Expr,>, Box<Expr,>, Box<Expr,>,),
 }
 
 #[derive(Clone, PartialEq)]
@@ -70,69 +70,80 @@ pub enum Type {
 
 #[derive(Clone, PartialEq)]
 pub enum Variable {
-    Single(String),
-    Array(String, Box<Expr>),
+    Single(String,),
+    Array(String, Box<Expr,>,),
 }
 
 #[derive(PartialEq)]
 pub enum Decl {
-    Single(String, Type, Option<Box<Expr>>),
-    Array(String, Type, u64, Option<Vec<Box<Expr>>>),
-    Func(String, Option<Type>, Option<Vec<FuncParam>>, Block),
+    Single(String, Type, Option<Box<Expr,>,>,),
+    Array(String, Type, u64, Option<Vec<Box<Expr,>,>,>,),
+    Func(String, Option<Type,>, Option<Vec<FuncParam,>,>, Block,),
 }
 
 #[derive(PartialEq)]
 pub enum FuncParam {
-    Single(String, Type),
-    Array(String, Type),
+    Single(String, Type,),
+    Array(String, Type,),
 }
 
 #[derive(PartialEq)]
 pub enum Stmt {
-    Attr(Variable, Box<Expr>),
+    Attr(Variable, Box<Expr,>,),
     Stop,
     Skip,
-    Return(Option<Box<Expr>>),
-    Read(Variable),
-    Write(Vec<Box<Expr>>),
-    Call(String, Option<Vec<Box<Expr>>>),
-    If(Box<Expr>, Block, Vec<(Box<Expr>, Block)>, Option<Block>),
-    While(Box<Expr>, Block),
-    For(Box<Stmt>, Box<Expr>, Box<Stmt>, Block),
+    Return(Option<Box<Expr,>,>,),
+    Read(Variable,),
+    Write(Vec<Box<Expr,>,>,),
+    Call(String, Option<Vec<Box<Expr,>,>,>,),
+    If(
+        Box<Expr,>,
+        Block,
+        Vec<(Box<Expr,>, Block,),>,
+        Option<Block,>,
+    ),
+    While(Box<Expr,>, Block,),
+    For(Box<Stmt,>, Box<Expr,>, Box<Stmt,>, Block,),
 }
 
 #[derive(PartialEq)]
-pub enum Either<A, B> {
-    Left(A),
-    Right(B),
+pub enum Either<A, B,> {
+    Left(A,),
+    Right(B,),
 }
 
 #[derive(PartialEq)]
 pub struct Block {
-    pub decl: Vec<Decl>,
-    pub commands: Vec<Either<Stmt, Block>>,
+    pub decl: Vec<Decl,>,
+    pub commands: Vec<Either<Stmt, Block,>,>,
 }
 
 impl fmt::Debug for Expr {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let (width, tabs) = get_tabs(f);
+    fn fmt(&self, f: &mut fmt::Formatter,) -> fmt::Result {
+        let (width, tabs,) = get_tabs(f,);
         match self {
-            Expr::Number(i) => write!(f, "${:?}", i),
-            Expr::Variable(v) => write!(f, "{tabs}{:width$?}", v, tabs = tabs, width = width + 1),
+            Expr::Number(i,) => write!(f, "${:?}", i),
+            Expr::Variable(v,) => {
+                write!(f, "{tabs}{:width$?}", v, tabs = tabs, width = width + 1)
+            }
             Expr::True => write!(f, "$true"),
             Expr::False => write!(f, "$false"),
 
-            Expr::Call(fun, Some(p)) => write!(
+            Expr::Call(fun, Some(p,),) => write!(
                 f,
                 "(Call {:width$?} with params {:?})",
                 fun,
                 p,
                 width = width + 1
             ),
-            Expr::Call(fun, _) => write!(f, "(Call {:width$?})", fun, width = width + 1),
+            Expr::Call(fun, _,) => {
+                write!(f, "(Call {:width$?})", fun, width = width + 1)
+            }
 
-            Expr::Op(l, o, r) => write!(f, "({:?} of {:?} and {:?})", o, l, r,),
-            Expr::Right(o, e) => write!(
+            Expr::Op(l, o, r,) => {
+                write!(f, "({:?} of {:?} and {:?})", o, l, r,)
+            }
+            Expr::Right(o, e,) => write!(
                 f,
                 "{tabs}({:width$?} of {:width$?})",
                 o,
@@ -140,7 +151,7 @@ impl fmt::Debug for Expr {
                 tabs = tabs,
                 width = width + 1
             ),
-            Expr::Ternary(c, t, _f) => write!(
+            Expr::Ternary(c, t, _f,) => write!(
                 f,
                 "{tabs}(If {:?} Then {:?} Else {:?})",
                 c,
@@ -167,7 +178,7 @@ impl Opcode {
 }
 
 impl fmt::Debug for Opcode {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter,) -> fmt::Result {
         match self {
             Opcode::Negative => write!(f, "-"),
             Opcode::Not => write!(f, "!"),
@@ -189,7 +200,7 @@ impl fmt::Debug for Opcode {
 }
 
 impl fmt::Debug for Type {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter,) -> fmt::Result {
         match self {
             Type::Int => write!(f, "Int"),
             Type::Bool => write!(f, "Bool"),
@@ -199,17 +210,17 @@ impl fmt::Debug for Type {
 }
 
 impl fmt::Debug for Variable {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter,) -> fmt::Result {
         match self {
-            Variable::Single(i) => write!(f, "(Var {:?})", i),
-            Variable::Array(i, s) => write!(f, "(Arr {:?} at pos {:?})", i, s),
+            Variable::Single(i,) => write!(f, "(Var {:?})", i),
+            Variable::Array(i, s,) => write!(f, "(Arr {:?} at pos {:?})", i, s),
         }
     }
 }
 
 impl fmt::Debug for Decl {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let (width, tabs) = get_tabs(f);
+    fn fmt(&self, f: &mut fmt::Formatter,) -> fmt::Result {
+        let (width, tabs,) = get_tabs(f,);
         match self {
             Decl::Single(i, t, Some(e)) => write!(
                 f,
@@ -295,10 +306,10 @@ impl fmt::Debug for Decl {
 }
 
 impl fmt::Debug for FuncParam {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let (width, tabs) = get_tabs(f);
+    fn fmt(&self, f: &mut fmt::Formatter,) -> fmt::Result {
+        let (width, tabs,) = get_tabs(f,);
         match self {
-            FuncParam::Single(i, t) => write!(
+            FuncParam::Single(i, t,) => write!(
                 f,
                 "{tabs}(Param {:width$?}, {:width$?})",
                 i,
@@ -306,7 +317,7 @@ impl fmt::Debug for FuncParam {
                 tabs = tabs,
                 width = width + 1
             ),
-            FuncParam::Array(i, t) => write!(
+            FuncParam::Array(i, t,) => write!(
                 f,
                 "{tabs}(Param {:width$?}[], {:width$?})",
                 i,
@@ -319,8 +330,8 @@ impl fmt::Debug for FuncParam {
 }
 
 impl fmt::Debug for Stmt {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let (width, tabs) = get_tabs(f);
+    fn fmt(&self, f: &mut fmt::Formatter,) -> fmt::Result {
+        let (width, tabs,) = get_tabs(f,);
         match self {
             Stmt::Attr(v, e) => write!(
                 f,
@@ -388,22 +399,26 @@ impl fmt::Debug for Stmt {
     }
 }
 
-impl<A, B> fmt::Debug for Either<A, B>
+impl<A, B,> fmt::Debug for Either<A, B,>
 where
     A: fmt::Debug,
     B: fmt::Debug,
 {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let (width, _tabs) = get_tabs(f);
+    fn fmt(&self, f: &mut fmt::Formatter,) -> fmt::Result {
+        let (width, _tabs,) = get_tabs(f,);
         match self {
-            Either::Left(a) => write!(f, "(Left {:width$?})", a, width = width + 1),
-            Either::Right(b) => write!(f, "(Right {:width$?})", b, width = width + 1),
+            Either::Left(a,) => {
+                write!(f, "(Left {:width$?})", a, width = width + 1)
+            }
+            Either::Right(b,) => {
+                write!(f, "(Right {:width$?})", b, width = width + 1)
+            }
         }
     }
 }
 
 impl Block {
-    pub fn new(d: Vec<Decl>, c: Vec<Either<Stmt, Block>>) -> Block {
+    pub fn new(d: Vec<Decl,>, c: Vec<Either<Stmt, Block,>,>,) -> Block {
         Block {
             decl: d,
             commands: c,
@@ -412,8 +427,8 @@ impl Block {
 }
 
 impl fmt::Debug for Block {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let (width, tabs) = get_tabs(f);
+    fn fmt(&self, f: &mut fmt::Formatter,) -> fmt::Result {
+        let (width, tabs,) = get_tabs(f,);
         write!(f, "{tabs}(Block", tabs = tabs)?;
         if self.decl.len() == 0 {
             write!(f, "\n   {tabs}with no decls", tabs = tabs)?;

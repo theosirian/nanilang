@@ -24,49 +24,53 @@ fn print_usage(opt: Options) {
 }
 
 fn main() {
-    let args: Vec<String> = env::args().collect();
+    let args: Vec<String,> = env::args().collect();
 
     let mut opts = Options::new();
-    opts.optflag("h", "help", "help option")
-        .optopt("i", "input", "input file", "FILE");
+    opts.optflag("h", "help", "help option",).optopt(
+        "i",
+        "input",
+        "input file",
+        "FILE",
+    );
 
-    let matches = match opts.parse(&args[1..]) {
-        Ok(m) => m,
-        Err(_) => {
-            print_usage(opts);
-            exit(ExitCodes::BadFormatParam as i32);
+    let matches = match opts.parse(&args[1..],) {
+        Ok(m,) => m,
+        Err(_,) => {
+            print_usage(opts,);
+            exit(ExitCodes::BadFormatParam as i32,);
         }
     };
 
-    let input_file_name = match matches.opt_str("i") {
-        Some(f) => f,
+    let input_file_name = match matches.opt_str("i",) {
+        Some(f,) => f,
         None => match matches.free.len() {
             1 => matches.free[0].clone(),
             _ => {
-                print_usage(opts);
-                exit(ExitCodes::FileError as i32);
+                print_usage(opts,);
+                exit(ExitCodes::FileError as i32,);
             }
         },
     };
 
-    if matches.opt_present("h") {
-        print_usage(opts);
-        exit(ExitCodes::Success as i32);
+    if matches.opt_present("h",) {
+        print_usage(opts,);
+        exit(ExitCodes::Success as i32,);
     }
 
-    let content = match fs::read_to_string(input_file_name) {
-        Ok(c) => c,
-        Err(e) => {
+    let content = match fs::read_to_string(input_file_name,) {
+        Ok(c,) => c,
+        Err(e,) => {
             println!("Error on file read: {}", e);
-            exit(ExitCodes::FileError as i32);
+            exit(ExitCodes::FileError as i32,);
         }
     };
 
     unsafe {
         let mut erros = vec![];
-        match grammar::ProgramParser::new().parse(&mut erros, &content) {
-            Ok(expr) => gen::gen(expr),
-            Err(err) => println!("{:?}", err),
+        match grammar::ProgramParser::new().parse(&mut erros, &content,) {
+            Ok(expr,) => gen::gen(expr,),
+            Err(err,) => println!("{:?}", err),
         }
     }
 }
@@ -76,7 +80,7 @@ fn parse_var_decl_with_init() {
     let mut errors = vec![];
 
     let var_decl = grammar::ProgramParser::new()
-        .parse(&mut errors, "let a = 2 : int;")
+        .parse(&mut errors, "let a = 2 : int;",)
         .unwrap();
 
     assert_eq!(
@@ -94,7 +98,7 @@ fn parse_var_decl_without_init() {
     let mut errors = vec![];
 
     let var_decl = grammar::ProgramParser::new()
-        .parse(&mut errors, "let a : int;")
+        .parse(&mut errors, "let a : int;",)
         .unwrap();
 
     assert_eq!(
@@ -108,7 +112,7 @@ fn parse_var_multi_decl_without_init() {
     let mut errors = vec![];
 
     let var_decl = grammar::ProgramParser::new()
-        .parse(&mut errors, "let a, b,c : int;")
+        .parse(&mut errors, "let a, b,c : int;",)
         .unwrap();
 
     assert_eq!(
@@ -126,7 +130,7 @@ fn parse_var_multi_decl_with_init() {
     let mut errors = vec![];
 
     let var_decl = grammar::ProgramParser::new()
-        .parse(&mut errors, "let a = 1, b  =2,c = 3 : int;")
+        .parse(&mut errors, "let a = 1, b  =2,c = 3 : int;",)
         .unwrap();
 
     assert_eq!(
@@ -156,7 +160,7 @@ fn parse_var_decl_with_expr_init() {
     let mut errors = vec![];
 
     let var_decl = grammar::ProgramParser::new()
-        .parse(&mut errors, "let a = b + 1 : int;")
+        .parse(&mut errors, "let a = b + 1 : int;",)
         .unwrap();
 
     assert_eq!(
@@ -165,7 +169,9 @@ fn parse_var_decl_with_expr_init() {
             "a".to_string(),
             ast::Type::Int,
             Some(Box::new(ast::Expr::Op(
-                Box::new(ast::Expr::Variable(ast::Variable::Single("b".to_string()))),
+                Box::new(ast::Expr::Variable(ast::Variable::Single(
+                    "b".to_string()
+                ))),
                 ast::Opcode::Add,
                 Box::new(ast::Expr::Number(1))
             )))
@@ -178,7 +184,7 @@ fn parse_var_decl_array_int_without_init() {
     let mut errors = vec![];
 
     let var_decl = grammar::ProgramParser::new()
-        .parse(&mut errors, "let v[10] : int;")
+        .parse(&mut errors, "let v[10] : int;",)
         .unwrap();
 
     assert_eq!(
