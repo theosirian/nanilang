@@ -41,19 +41,23 @@ struct Module {
     builder: LLVMBuilderRef,
 }
 
-struct Function<'function> {
+struct Function<'function,> {
     module: &'function Module,
     symbols: HashMap<String, Vec<Symbol,>,>,
     value: LLVMValueRef,
 }
 
-struct Scope<'scope> {
-    function: &'scope Function<'scope>,
+struct Scope<'scope,> {
+    function: &'scope Function<'scope,>,
     symbols: HashMap<String, Vec<Symbol,>,>,
 }
 
-impl<'scope> Scope<'scope> {
-    unsafe fn new(function: &'scope Function<'scope>, name: *const i8, b: Block,) -> Scope<'scope> {
+impl<'scope,> Scope<'scope,> {
+    unsafe fn new(
+        function: &'scope Function<'scope,>,
+        name: *const i8,
+        b: Block,
+    ) -> Scope<'scope,> {
         let entry = LLVMAppendBasicBlockInContext(
             function.module.context,
             function.value,
@@ -74,7 +78,10 @@ impl<'scope> Scope<'scope> {
         scope
     }
 
-    unsafe fn get_variable(self: &Scope<'scope>, var: Variable,) -> LLVMValueRef {
+    unsafe fn get_variable(
+        self: &Scope<'scope,>,
+        var: Variable,
+    ) -> LLVMValueRef {
         match var {
             Variable::Single(s,) => {
                 if let Some(vec,) = self.symbols.get(&s,) {
@@ -134,7 +141,7 @@ impl<'scope> Scope<'scope> {
         }
     }
 
-    unsafe fn flatten_expr(self: &Scope<'scope>, e: Expr,) -> LLVMValueRef {
+    unsafe fn flatten_expr(self: &Scope<'scope,>, e: Expr,) -> LLVMValueRef {
         let mut v = Vec::new();
         match e {
             Expr::Number(n,) => {
@@ -302,7 +309,7 @@ impl<'scope> Scope<'scope> {
     }
 
     unsafe fn local_add_variable(
-        self: &mut Scope<'scope>,
+        self: &mut Scope<'scope,>,
         n: String,
         t: Type,
         e: Option<Box<Expr,>,>,
@@ -328,7 +335,7 @@ impl<'scope> Scope<'scope> {
     }
 
     unsafe fn local_add_array(
-        self: &mut Scope<'scope>,
+        self: &mut Scope<'scope,>,
         n: String,
         t: Type,
         s: u64,
@@ -435,7 +442,7 @@ impl<'scope> Scope<'scope> {
     }
 
     unsafe fn gen_decl(
-        self: &mut Scope<'scope>,
+        self: &mut Scope<'scope,>,
         parent: &LLVMValueRef,
         decl: Vec<Decl,>,
         allow_fn: bool,
@@ -456,7 +463,7 @@ impl<'scope> Scope<'scope> {
     }
 
     unsafe fn build_attr(
-        self: &mut Scope<'scope>,
+        self: &mut Scope<'scope,>,
         v: String,
         e: Expr,
     ) -> Result<(), String,> {
@@ -474,7 +481,7 @@ impl<'scope> Scope<'scope> {
     }
 
     unsafe fn gen_block(
-        self: &mut Scope<'scope>,
+        self: &mut Scope<'scope,>,
         parent: &LLVMValueRef,
         looping: Option<(LLVMBasicBlockRef, LLVMBasicBlockRef,),>,
         stmts: Vec<Either<Stmt, Block,>,>,
@@ -876,13 +883,13 @@ impl<'scope> Scope<'scope> {
     }
 }
 
-impl<'function> Function<'function> {
+impl<'function,> Function<'function,> {
     unsafe fn new(
         module: &'function Module,
         name: String,
         t: Type,
         a: Option<Vec<FuncParam,>,>,
-    ) -> Function<'function> {
+    ) -> Function<'function,> {
         let mut symbols = module.symbols.clone();
 
         // TODO Add void type
@@ -1035,11 +1042,11 @@ impl Module {
             .push(new_symbol,);
 
         let function = match t {
-            Some(t) => Function::new(&self, n.to_string(), t, a),
-            _ => Function::new(self, n.to_string(), Type::Int, a),
+            Some(t,) => Function::new(&self, n.to_string(), t, a,),
+            _ => Function::new(self, n.to_string(), Type::Int, a,),
         };
 
-        Scope::new(&function, c_str!("entry"), b);
+        Scope::new(&function, c_str!("entry"), b,);
     }
 }
 
