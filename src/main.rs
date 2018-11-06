@@ -1,4 +1,4 @@
-extern crate getopts;
+extern crate clap;
 extern crate lalrpop_util;
 extern crate llvm_sys as llvm;
 
@@ -7,8 +7,7 @@ mod ast;
 mod gen;
 mod grammar;
 
-use getopts::Options;
-
+use clap::{app_from_crate, crate_authors, crate_description, crate_name, crate_version, Arg};
 use std::env;
 use std::fs;
 use std::process::exit;
@@ -19,40 +18,20 @@ enum ExitCodes {
     BadFormatParam = 2,
 }
 
-fn print_usage(opt: Options) {
-    println!("{}", opt.usage(&"Compile the nani lang"));
-}
-
 fn main() {
-    let args: Vec<String> = env::args().collect();
+    let matches = app_from_crate!()
+        .arg(
+            Arg::with_name("input")
+                .takes_value(true)
+                .value_name("FILE")
+                .help("File to compile"),
+        )
+        .get_matches();
 
-    let mut opts = Options::new();
-    opts.optflag("h", "help", "help option")
-        .optopt("i", "input", "input file", "FILE");
-
-    let matches = match opts.parse(&args[1..]) {
-        Ok(m) => m,
-        Err(_) => {
-            print_usage(opts);
-            exit(ExitCodes::BadFormatParam as i32);
-        }
-    };
-
-    let input_file_name = match matches.opt_str("i") {
+    let input_file_name = match matches.value_of("i") {
         Some(f) => f,
-        None => match matches.free.len() {
-            1 => matches.free[0].clone(),
-            _ => {
-                print_usage(opts);
-                exit(ExitCodes::FileError as i32);
-            }
-        },
+        None => exit(ExitCodes::FileError as i32),
     };
-
-    if matches.opt_present("h") {
-        print_usage(opts);
-        exit(ExitCodes::Success as i32);
-    }
 
     let content = match fs::read_to_string(input_file_name) {
         Ok(c) => c,
