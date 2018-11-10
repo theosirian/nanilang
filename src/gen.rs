@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use std::ffi::*;
 use std::iter;
 use std::ptr;
+use symbol_table::*;
 
 macro_rules! c_str {
     ($s:expr) => {{
@@ -31,18 +32,10 @@ macro_rules! as_str {
     };
 }
 
-#[derive(Clone, Debug)]
-enum Symbol {
-    Variable(LLVMValueRef),
-    Array(u32, LLVMValueRef),
-    ArrayRef(LLVMValueRef),
-    Func(String),
-}
-
 unsafe fn gen_type(context: LLVMContextRef, t: Option<Type>) -> LLVMTypeRef {
     match t {
         Some(Type::Bool) => LLVMInt1TypeInContext(context),
-        Some(Type::Int) => LLVMInt32TypeInContext(context),
+        Some(Type::Int) => LLVMInt64TypeInContext(context),
         Some(Type::Str) => panic!("Do not use gen_type with Strings!"),
         None => LLVMVoidTypeInContext(context),
     }
@@ -59,7 +52,7 @@ unsafe fn gen_array_type(context: LLVMContextRef, t: Type) -> LLVMTypeRef {
 unsafe fn flatten_expr(
     context: LLVMContextRef,
     module: LLVMModuleRef,
-    symbols: &HashMap<String, Vec<Symbol>>,
+    symbols: &SymbolTable,
     builder: LLVMBuilderRef,
     e: Expr,
 ) -> LLVMValueRef {
@@ -69,40 +62,43 @@ unsafe fn flatten_expr(
             v.push(LLVMConstInt(gen_type(context, Some(Type::Int)), n, 1));
         }
         Expr::Variable(Variable::Single(s)) => {
-            if let Some(vec) = symbols.get(&s) {
-                if let Some(Symbol::Variable(mut var)) = vec.last().clone() {
-                    v.push(LLVMBuildLoad(builder, var, c_str!("flat")));
+            if let Ok(var) = symbols.get(&s) {
+                if let Symbol::Variable(mut var) = var {
+                    let tmp = LLVMBuildLoad(builder, var, c_str!("flat"));
+                    v.push(tmp);
                 } else {
-                    panic!("Variable <{:?}> is used but not declared!", s);
+                    panic!("Variable <{:?}> of a type diferent than expected!", s);
                 }
             } else {
                 panic!("Variable <{:?}> is used but not declared!", s);
             }
         }
         Expr::Variable(Variable::Array(s, e)) => {
-            if let Some(vec) = symbols.get(&s) {
-                if let Some(Symbol::ArrayRef(mut var)) = vec.last().clone() {
-                    let flattened = flatten_expr(context, module, &symbols, builder, *e);
-                    let arr_at = LLVMBuildGEP(
+            if let Ok(var) = symbols.get(&s) {
+                if let Symbol::ArrayRef(mut var) = var {
+                    let flattened = flatten_expr(context, module, symbols, builder, *e);
+                    let loaded_var = LLVMBuildLoad(builder, var, c_str!("loaded_param"));
+                    let arr_at = LLVMBuildInBoundsGEP(
                         builder,
-                        var,
+                        loaded_var,
                         [
                             flattened,
-                            LLVMConstInt(gen_type(context, Some(Type::Int)), 0, 1),
-                        ].as_mut_ptr(),
-                        2,
+                        ]
+                        .as_mut_ptr(),
+                        1,
                         c_str!("arr"),
                     );
                     v.push(LLVMBuildLoad(builder, arr_at, c_str!("flat")));
-                } else if let Some(Symbol::Array(_, mut var)) = vec.last().clone() {
-                    let flattened = flatten_expr(context, module, &symbols, builder, *e);
+                } else if let Symbol::Array(_, mut var) = var {
+                    let flattened = flatten_expr(context, module, symbols, builder, *e);
                     let arr_at = LLVMBuildGEP(
                         builder,
                         var,
                         [
                             flattened,
                             LLVMConstInt(gen_type(context, Some(Type::Int)), 0, 1),
-                        ].as_mut_ptr(),
+                        ]
+                        .as_mut_ptr(),
                         2,
                         c_str!("arr"),
                     );
@@ -207,7 +203,7 @@ unsafe fn flatten_expr(
 unsafe fn local_add_variable(
     context: LLVMContextRef,
     module: LLVMModuleRef,
-    symbols: &mut HashMap<String, Vec<Symbol>>,
+    symbols: &mut SymbolTable,
     builder: LLVMBuilderRef,
     n: String,
     t: Type,
@@ -222,13 +218,13 @@ unsafe fn local_add_variable(
         LLVMBuildStore(builder, LLVMConstInt(t, 0, 1), decl);
     }
     let new_symbol = Symbol::Variable(decl);
-    symbols.entry(n).or_insert(Vec::new()).push(new_symbol);
+    symbols.set(&n, new_symbol);
 }
 
 unsafe fn local_add_array(
     context: LLVMContextRef,
     module: LLVMModuleRef,
-    symbols: &mut HashMap<String, Vec<Symbol>>,
+    symbols: &mut SymbolTable,
     builder: LLVMBuilderRef,
     n: String,
     t: Type,
@@ -248,7 +244,8 @@ unsafe fn local_add_array(
                         [
                             LLVMConstInt(gen_type(context, Some(Type::Int)), i as u64, 1),
                             LLVMConstInt(gen_type(context, Some(Type::Int)), 0, 1),
-                        ].as_mut_ptr(),
+                        ]
+                        .as_mut_ptr(),
                         2,
                         c_str!("ptr_get"),
                     );
@@ -261,7 +258,8 @@ unsafe fn local_add_array(
                         [
                             LLVMConstInt(gen_type(context, Some(Type::Int)), i as u64, 1),
                             LLVMConstInt(gen_type(context, Some(Type::Int)), 0, 1),
-                        ].as_mut_ptr(),
+                        ]
+                        .as_mut_ptr(),
                         2,
                         c_str!("ptr_get"),
                     );
@@ -274,7 +272,8 @@ unsafe fn local_add_array(
                         [
                             LLVMConstInt(gen_type(context, Some(Type::Int)), i as u64, 1),
                             LLVMConstInt(gen_type(context, Some(Type::Int)), 0, 1),
-                        ].as_mut_ptr(),
+                        ]
+                        .as_mut_ptr(),
                         2,
                         c_str!("ptr_get"),
                     );
@@ -298,15 +297,16 @@ unsafe fn local_add_array(
          */
     }
     let new_symbol = Symbol::Array(s as u32, decl);
-    symbols.entry(n).or_insert(Vec::new()).push(new_symbol);
+
+    symbols.set(&n, new_symbol);
 }
 
 unsafe fn global_add_func(
     context: LLVMContextRef,
     module: LLVMModuleRef,
-    symbols: &mut HashMap<String, Vec<Symbol>>,
+    symbols: &mut SymbolTable,
     n: String,
-    t: Option<Type>,
+    t: Option<Type>, // Return Type
     a: Option<Vec<FuncParam>>,
     b: Block,
 ) {
@@ -330,29 +330,30 @@ unsafe fn global_add_func(
     );
     let function = LLVMAddFunction(module, as_str!(n), function_type);
 
-    for (i, e) in args.iter().enumerate() {
-        match e.1 {
-            true => {
-                let fn_param = LLVMGetParam(function, i as u32);
-                let new_symbol = Symbol::Variable(fn_param);
-                symbols
-                    .entry(e.0.clone())
-                    .or_insert(Vec::new())
-                    .push(new_symbol);
-            }
-            false => {
-                let fn_param = LLVMGetParam(function, i as u32);
-                let new_symbol = Symbol::ArrayRef(fn_param);
-                symbols
-                    .entry(e.0.clone())
-                    .or_insert(Vec::new())
-                    .push(new_symbol);
-            }
-        }
-    }
+    symbols.initialize_scope();
 
     let entry = LLVMAppendBasicBlockInContext(context, function, c_str!("entry"));
     LLVMPositionBuilderAtEnd(builder, entry);
+
+    for (i, e) in args.iter().enumerate() {
+        match e.1 {
+            true => {
+                // Should copy the value ??
+                let fn_param = LLVMGetParam(function, i as u32);
+                let alloced_param = LLVMBuildAlloca(builder, e.2, c_str!("param"));
+                LLVMBuildStore(builder, fn_param, alloced_param); 
+                let new_symbol = Symbol::Variable(alloced_param);
+                symbols.set(&e.0, new_symbol);
+            }
+            false => {
+                let fn_param = LLVMGetParam(function, i as u32);
+                let alloced_param = LLVMBuildAlloca(builder, e.2, c_str!("param"));
+                LLVMBuildStore(builder, fn_param, alloced_param); 
+                let new_symbol = Symbol::ArrayRef(alloced_param);
+                symbols.set(&e.0, new_symbol);
+            }
+        }
+    }
 
     let test = LLVMGetNamedFunction(module, c_str!("printf"));
     // Stupid way of checking if the function is already defined.
@@ -375,14 +376,18 @@ unsafe fn global_add_func(
         context, module, symbols, builder, function, None, b.commands,
     );
 
+    symbols.kill_scope();
+
     LLVMDisposeBuilder(builder);
     let new_symbol = Symbol::Func(n.clone());
-    symbols.entry(n).or_insert(Vec::new()).push(new_symbol);
+
+    symbols.set(&n, new_symbol);
 }
+
 unsafe fn gen_decl(
     context: LLVMContextRef,
     module: LLVMModuleRef,
-    symbols: &mut HashMap<String, Vec<Symbol>>,
+    symbols: &mut SymbolTable,
     builder: LLVMBuilderRef,
     parent: LLVMValueRef,
     decl: Vec<Decl>,
@@ -408,14 +413,14 @@ unsafe fn gen_decl(
 unsafe fn build_attr(
     context: LLVMContextRef,
     module: LLVMModuleRef,
-    symbols: &HashMap<String, Vec<Symbol>>,
+    symbols: &SymbolTable,
     builder: LLVMBuilderRef,
     v: String,
     e: Expr,
 ) -> Result<(), String> {
-    if let Some(vec) = symbols.get(&v) {
-        if let Some(Symbol::Variable(mut var)) = vec.last() {
-            let flattened = flatten_expr(context, module, &symbols, builder, e);
+    if let Ok(var) = symbols.get(&v) {
+        if let Symbol::Variable(mut var) = var {
+            let flattened = flatten_expr(context, module, symbols, builder, e);
             LLVMBuildStore(builder, flattened, var);
             Ok(())
         } else {
@@ -429,24 +434,24 @@ unsafe fn build_attr(
 unsafe fn gen_block(
     context: LLVMContextRef,
     module: LLVMModuleRef,
-    symbols: &mut HashMap<String, Vec<Symbol>>,
+    symbols: &mut SymbolTable,
     builder: LLVMBuilderRef,
     parent: LLVMValueRef,
     looping: Option<(LLVMBasicBlockRef, LLVMBasicBlockRef)>,
     stmts: Vec<Either<Stmt, Block>>,
 ) {
-    // This deep clones the Vector as far as tested.
-    let mut my_symbols = symbols.clone();
+    symbols.initialize_scope();
+
     for i in stmts {
         match i {
             Either::Left(Stmt::Attr(Variable::Single(v), e)) => {
-                if let Err(s) = build_attr(context, module, &my_symbols, builder, v, *e) {
+                if let Err(s) = build_attr(context, module, symbols, builder, v, *e) {
                     panic!(s);
                 }
             }
             Either::Left(Stmt::Write(vec)) => {
                 for i in vec {
-                    let flattened = flatten_expr(context, module, &my_symbols, builder, *i);
+                    let flattened = flatten_expr(context, module, symbols, builder, *i);
                     let format_str = LLVMGetNamedGlobal(module, c_str!("format_int"));
                     let mut printf_args = [format_str, flattened];
                     let printf_fn = LLVMGetNamedFunction(module, c_str!("printf"));
@@ -460,8 +465,8 @@ unsafe fn gen_block(
                 }
             }
             Either::Left(Stmt::Read(Variable::Single(v))) => {
-                if let Some(vec) = my_symbols.get(&v) {
-                    if let Some(Symbol::Variable(mut var)) = vec.last() {
+                if let Ok(var) = symbols.get(&v) {
+                    if let Symbol::Variable(mut var) = var {
                         let format_str = LLVMGetNamedGlobal(module, c_str!("format_int"));
                         let mut scanf_args = [format_str, var];
                         let scanf_fn = LLVMGetNamedFunction(module, c_str!("scanf"));
@@ -476,16 +481,17 @@ unsafe fn gen_block(
                 }
             }
             Either::Left(Stmt::Read(Variable::Array(v, e))) => {
-                if let Some(vec) = my_symbols.get(&v) {
-                    if let Some(Symbol::ArrayRef(mut var)) = vec.last() {
-                        let flattened = flatten_expr(context, module, &my_symbols, builder, *e);
+                if let Ok(var) = symbols.get(&v) {
+                    if let Symbol::ArrayRef(mut var) = var {
+                        let flattened = flatten_expr(context, module, symbols, builder, *e);
                         let arr_at = LLVMBuildGEP(
                             builder,
                             var,
                             [
                                 LLVMConstInt(gen_type(context, Some(Type::Int)), 0, 1),
                                 flattened,
-                            ].as_mut_ptr(),
+                            ]
+                            .as_mut_ptr(),
                             2,
                             c_str!("arr"),
                         );
@@ -499,15 +505,16 @@ unsafe fn gen_block(
                             2,
                             c_str!("read"),
                         );
-                    } else if let Some(Symbol::Array(_, mut var)) = vec.last() {
-                        let flattened = flatten_expr(context, module, &my_symbols, builder, *e);
+                    } else if let Symbol::Array(_, mut var) = var {
+                        let flattened = flatten_expr(context, module, symbols, builder, *e);
                         let arr_at = LLVMBuildGEP(
                             builder,
                             var,
                             [
                                 LLVMConstInt(gen_type(context, Some(Type::Int)), 0, 1),
                                 flattened,
-                            ].as_mut_ptr(),
+                            ]
+                            .as_mut_ptr(),
                             2,
                             c_str!("arr"),
                         );
@@ -544,7 +551,7 @@ unsafe fn gen_block(
             }
             Either::Left(Stmt::Return(v)) => {
                 if let Some(v) = v {
-                    let flattened = flatten_expr(context, module, &my_symbols, builder, *v);
+                    let flattened = flatten_expr(context, module, symbols, builder, *v);
                     LLVMBuildRet(builder, flattened);
                 } else {
                     LLVMBuildRetVoid(builder);
@@ -554,24 +561,16 @@ unsafe fn gen_block(
                 let then_block = LLVMAppendBasicBlock(parent, c_str!("then"));
                 let merge = LLVMAppendBasicBlock(parent, c_str!("merge"));
 
-                let cond = flatten_expr(context, module, &my_symbols, builder, *cond);
+                let cond = flatten_expr(context, module, symbols, builder, *cond);
                 LLVMBuildCondBr(builder, cond, then_block, merge);
 
                 // Build True Branch
                 LLVMPositionBuilderAtEnd(builder, then_block);
-                gen_decl(
-                    context,
-                    module,
-                    &mut my_symbols,
-                    builder,
-                    parent,
-                    then.decl,
-                    false,
-                );
+                gen_decl(context, module, symbols, builder, parent, then.decl, false);
                 gen_block(
                     context,
                     module,
-                    &mut my_symbols,
+                    symbols,
                     builder,
                     parent,
                     looping,
@@ -587,24 +586,16 @@ unsafe fn gen_block(
                 let else_block = LLVMAppendBasicBlock(parent, c_str!("else"));
                 let merge = LLVMAppendBasicBlock(parent, c_str!("merge"));
 
-                let cond = flatten_expr(context, module, &my_symbols, builder, *cond);
+                let cond = flatten_expr(context, module, symbols, builder, *cond);
                 LLVMBuildCondBr(builder, cond, then_block, else_block);
 
                 // Build True Branch
                 LLVMPositionBuilderAtEnd(builder, then_block);
-                gen_decl(
-                    context,
-                    module,
-                    &mut my_symbols,
-                    builder,
-                    parent,
-                    then.decl,
-                    false,
-                );
+                gen_decl(context, module, symbols, builder, parent, then.decl, false);
                 gen_block(
                     context,
                     module,
-                    &mut my_symbols,
+                    symbols,
                     builder,
                     parent,
                     looping,
@@ -614,19 +605,11 @@ unsafe fn gen_block(
 
                 // Build False Branch
                 LLVMPositionBuilderAtEnd(builder, else_block);
-                gen_decl(
-                    context,
-                    module,
-                    &mut my_symbols,
-                    builder,
-                    parent,
-                    _else.decl,
-                    false,
-                );
+                gen_decl(context, module, symbols, builder, parent, _else.decl, false);
                 gen_block(
                     context,
                     module,
-                    &mut my_symbols,
+                    symbols,
                     builder,
                     parent,
                     looping,
@@ -646,7 +629,7 @@ unsafe fn gen_block(
                 let init = *init;
                 // Build attribution before entering init_block
                 if let Stmt::Attr(Variable::Single(v), e) = init {
-                    if let Err(s) = build_attr(context, module, &my_symbols, builder, v, *e) {
+                    if let Err(s) = build_attr(context, module, symbols, builder, v, *e) {
                         panic!(s);
                     }
                 } else if let Stmt::Attr(Variable::Array(v, i), e) = init {
@@ -658,24 +641,16 @@ unsafe fn gen_block(
 
                 // Build condition inside cond_block
                 LLVMPositionBuilderAtEnd(builder, cond_block);
-                let cond = flatten_expr(context, module, &my_symbols, builder, *cond);
+                let cond = flatten_expr(context, module, symbols, builder, *cond);
                 LLVMBuildCondBr(builder, cond, loop_block, exit_block);
 
                 // Position at loop to build loop's instructions
                 LLVMPositionBuilderAtEnd(builder, loop_block);
-                gen_decl(
-                    context,
-                    module,
-                    &mut my_symbols,
-                    builder,
-                    parent,
-                    block.decl,
-                    false,
-                );
+                gen_decl(context, module, symbols, builder, parent, block.decl, false);
                 gen_block(
                     context,
                     module,
-                    &mut my_symbols,
+                    symbols,
                     builder,
                     parent,
                     Some((step_block, exit_block)),
@@ -687,7 +662,7 @@ unsafe fn gen_block(
                 // Add step to end of loop block
                 let step = *step;
                 if let Stmt::Attr(Variable::Single(v), e) = step {
-                    if let Err(s) = build_attr(context, module, &my_symbols, builder, v, *e) {
+                    if let Err(s) = build_attr(context, module, symbols, builder, v, *e) {
                         panic!(s);
                     }
                 } else if let Stmt::Attr(Variable::Array(v, i), e) = step {
@@ -710,24 +685,16 @@ unsafe fn gen_block(
 
                 LLVMPositionBuilderAtEnd(builder, cond_block);
                 // Build condition inside cond_block
-                let cond = flatten_expr(context, module, &my_symbols, builder, *cond);
+                let cond = flatten_expr(context, module, symbols, builder, *cond);
                 LLVMBuildCondBr(builder, cond, loop_block, exit_block);
 
                 // Position at loop to build loop's instructions
                 LLVMPositionBuilderAtEnd(builder, loop_block);
-                gen_decl(
-                    context,
-                    module,
-                    &mut my_symbols,
-                    builder,
-                    parent,
-                    block.decl,
-                    false,
-                );
+                gen_decl(context, module, symbols, builder, parent, block.decl, false);
                 gen_block(
                     context,
                     module,
-                    &mut my_symbols,
+                    symbols,
                     builder,
                     parent,
                     Some((cond_block, exit_block)),
@@ -744,32 +711,28 @@ unsafe fn gen_block(
                 for i in b.decl {
                     match i {
                         Decl::Single(n, t, e) => {
-                            local_add_variable(context, module, &mut my_symbols, builder, n, t, e)
+                            local_add_variable(context, module, symbols, builder, n, t, e)
                         }
                         Decl::Array(n, t, s, e) => {
-                            local_add_array(context, module, &mut my_symbols, builder, n, t, s, e)
+                            local_add_array(context, module, symbols, builder, n, t, s, e)
                         }
                         _ => panic!("Cannot declare functions inside functions!"),
                     }
                 }
                 gen_block(
-                    context,
-                    module,
-                    &mut my_symbols,
-                    builder,
-                    parent,
-                    looping,
-                    b.commands,
+                    context, module, symbols, builder, parent, looping, b.commands,
                 )
             }
         }
     }
+
+    symbols.kill_scope();
 }
 
 unsafe fn global_add_variable(
     context: LLVMContextRef,
     module: LLVMModuleRef,
-    symbols: &mut HashMap<String, Vec<Symbol>>,
+    symbols: &mut SymbolTable,
     n: String,
     t: Type,
     e: Option<Box<Expr>>,
@@ -785,13 +748,13 @@ unsafe fn global_add_variable(
         panic!("Cannot initialize global value with non-const expresion!");
     }
     let new_symbol = Symbol::Variable(decl);
-    symbols.entry(n).or_insert(Vec::new()).push(new_symbol);
+    symbols.set(&n, new_symbol);
 }
 
 unsafe fn global_add_array(
     context: LLVMContextRef,
     module: LLVMModuleRef,
-    symbols: &mut HashMap<String, Vec<Symbol>>,
+    symbols: &mut SymbolTable,
     n: String,
     t: Type,
     s: u64,
@@ -814,13 +777,13 @@ unsafe fn global_add_array(
         LLVMSetInitializer(decl, values);
     }
     let new_symbol = Symbol::Array(s as u32, decl);
-    symbols.entry(n).or_insert(Vec::new()).push(new_symbol);
+    symbols.set(&n, new_symbol);
 }
 
 pub unsafe fn gen(decls: Vec<Decl>) {
     let context = LLVMContextCreate();
     let module = LLVMModuleCreateWithNameInContext(c_str!("program"), context);
-    let mut symbols: HashMap<String, Vec<Symbol>> = HashMap::new();
+    let mut symbols = SymbolTable::new();
     for i in decls {
         match i {
             Decl::Single(n, t, e) => global_add_variable(context, module, &mut symbols, n, t, e),
