@@ -6,6 +6,7 @@ extern crate llvm_sys as llvm;
 mod ast;
 mod gen;
 mod grammar;
+mod symbol_table;
 
 use clap::{app_from_crate, crate_authors, crate_description, crate_name, crate_version, Arg};
 use std::env;
@@ -24,11 +25,12 @@ fn main() {
             Arg::with_name("input")
                 .takes_value(true)
                 .value_name("FILE")
+                .required(true)
                 .help("File to compile"),
         )
         .get_matches();
 
-    let input_file_name = match matches.value_of("i") {
+    let input_file_name = match matches.value_of("input") {
         Some(f) => f,
         None => exit(ExitCodes::FileError as i32),
     };
