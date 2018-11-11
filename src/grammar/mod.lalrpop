@@ -1,4 +1,4 @@
-use lalrpop_util::ErrorRecovery;
+use lalrpop_util::{ ErrorRecovery, ParseError };
 
 use std::str::FromStr;
 use ast::*;
@@ -159,6 +159,7 @@ Type: Type = {
 };
 
 VarArrayDecl: (String, u64, Option<Vec<Box<Expr>>>) = {
+    // TODO Possible error recovery is when a user insert an expression in place of a number
     <a:Id> OPEN_BRACKET <n:Num> CLOSE_BRACKET EQUAL OPEN_BRACE <f:Comma<Expr>> CLOSE_BRACE => (a, n, Some(f)),
     <a:Id> OPEN_BRACKET <n:Num> CLOSE_BRACKET => (a, n, None),
 };
@@ -195,22 +196,29 @@ ParamSingleDecl: String = {
 ParamDeclList = Comma<Either<ParamSingleDecl, ParamArrayDecl>>;
 
 FuncDecl: Decl = DEF <i:Id> OPEN_PARENS <p:SemiColon<(<ParamDeclList> COLON <Type>)>?> CLOSE_PARENS <t:(COLON <Type>)?> <b:Block> => {
-    let mut v = Vec::new();
-    if let Some(p) = p {
-        for x in p {
-            let d = x.0;
-            let t = x.1;
-            for i in d {
-                if let Some(j) = i.0 {
-                    v.push(FuncParam::Single(j, t.clone()));
-                } else if let Some(j) = i.1 {
-                    v.push(FuncParam::Array(j, t.clone()));
+    // TODO Register the location of function declaration to show to the user in case of redeclaration
+    let mut parameters_vector = Vec::new();
+    if let Some(parameter_list) = p {
+        for parameter in parameter_list {
+            // parameter is an tuple of (list, type)
+            let declaration_list = parameter.0;
+            let type_of = parameter.1;
+            for declaration in declaration_list {
+                // !! The declaration is a parser Either not an AST::Either
+                if let Some(identifier) = declaration.0 { // If either is fullfiled in the left is a single variable
+                    parameters_vector.push(FuncParam::Single(identifier, type_of.clone()));
+                } else if let Some(identifier) = declaration.1 { // Else if is fullfiled in the right side is an array
+                    parameters_vector.push(FuncParam::Array(identifier, type_of.clone()));
                 }
             }
         }
-        Decl::Func(i, t, Some(v), b)
+        // i -> identifier
+        // t -> function return type, could be None, when it's a procedure
+        // parameter_list -- Could be None, when it does not have any parameter
+        // b -> function block
+        Decl::Func(i, t, Some(parameters_vector), b) // When have parameters
     } else {
-        Decl::Func(i, t, None, b)
+        Decl::Func(i, t, None, b) // When does not have parameter
     }
 };
 
@@ -248,12 +256,13 @@ Stmt: Stmt = {
     READ <v:Var> SEMICOLON => Stmt::Read(<>),
     WRITE <Comma<Expr>> SEMICOLON => Stmt::Write(<>),
 
+    // FIXME Function call is an expression not an statement
     <Id> OPEN_PARENS <Comma<Expr>?> CLOSE_PARENS SEMICOLON => Stmt::Call(<>),
 
     IF OPEN_PARENS <Expr> CLOSE_PARENS <Block> <(ELSE IF OPEN_PARENS <Expr> CLOSE_PARENS <Block>)*> <(ELSE <Block>)?> => Stmt::If(<>),
 
     WHILE OPEN_PARENS <Expr> CLOSE_PARENS <Block> => Stmt::While(<>),
-
+    // TODO If for does not accpet an a empty initialization or step recovery from error and print to user
     FOR OPEN_PARENS <i:AllAttr> SEMICOLON <e:Expr> SEMICOLON <s:AllAttr> CLOSE_PARENS <b:Block> => Stmt::For(Box::new(i), e, Box::new(s), b),
 };
 

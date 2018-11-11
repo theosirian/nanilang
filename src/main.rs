@@ -9,6 +9,7 @@ mod grammar;
 mod symbol_table;
 
 use clap::{app_from_crate, crate_authors, crate_description, crate_name, crate_version, Arg};
+use lalrpop_util::ParseError;
 use std::env;
 use std::fs;
 use std::process::exit;
@@ -46,8 +47,33 @@ fn main() {
     unsafe {
         let mut erros = vec![];
         match grammar::ProgramParser::new().parse(&mut erros, &content) {
+            // TODO Make a colored print to terminal and create an helper to show errors and
+            // warnings
             Ok(expr) => gen::gen(expr),
-            Err(err) => println!("{:?}", err),
+            Err(err) => match err {
+                ParseError::InvalidToken { location } => {
+                    println!(
+                        "\"{}\": line {:?}, col {:?}, Error - {} not recognized as a token",
+                        input_file_name,
+                        location,
+                        location,
+                        &content[location..location + 3]
+                    );
+                }
+                ParseError::UnrecognizedToken { token, expected } => {
+                    print!(
+                        "\"{}\": line {:?}, col {:?}, Error - {:?} was expected, but found: ",
+                        input_file_name, 0, 0, expected
+                    );
+                    if let Some(token) = token {
+                        println!("{}", token.1);
+                    } else {
+                        println!("end of the stream!");
+                    }
+                }
+                ParseError::ExtraToken { token } => {}
+                ParseError::User { error } => {}
+            },
         }
     }
 }

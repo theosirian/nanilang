@@ -81,10 +81,7 @@ unsafe fn flatten_expr(
                     let arr_at = LLVMBuildInBoundsGEP(
                         builder,
                         loaded_var,
-                        [
-                            flattened,
-                        ]
-                        .as_mut_ptr(),
+                        [flattened].as_mut_ptr(),
                         1,
                         c_str!("arr"),
                     );
@@ -341,14 +338,14 @@ unsafe fn global_add_func(
                 // Should copy the value ??
                 let fn_param = LLVMGetParam(function, i as u32);
                 let alloced_param = LLVMBuildAlloca(builder, e.2, c_str!("param"));
-                LLVMBuildStore(builder, fn_param, alloced_param); 
+                LLVMBuildStore(builder, fn_param, alloced_param);
                 let new_symbol = Symbol::Variable(alloced_param);
                 symbols.set(&e.0, new_symbol);
             }
             false => {
                 let fn_param = LLVMGetParam(function, i as u32);
                 let alloced_param = LLVMBuildAlloca(builder, e.2, c_str!("param"));
-                LLVMBuildStore(builder, fn_param, alloced_param); 
+                LLVMBuildStore(builder, fn_param, alloced_param);
                 let new_symbol = Symbol::ArrayRef(alloced_param);
                 symbols.set(&e.0, new_symbol);
             }
