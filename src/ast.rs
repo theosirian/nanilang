@@ -118,7 +118,9 @@ impl fmt::Debug for Expr {
         let (width, tabs) = get_tabs(f);
         match self {
             Expr::Number(i) => write!(f, "${:?}", i),
-            Expr::Variable(v) => write!(f, "{tabs}{:width$?}", v, tabs = tabs, width = width + 1),
+            Expr::Variable(v) => {
+                write!(f, "{tabs}{:width$?}", v, tabs = tabs, width = width + 1)
+            }
             Expr::True => write!(f, "$true"),
             Expr::False => write!(f, "$false"),
 
@@ -129,7 +131,9 @@ impl fmt::Debug for Expr {
                 p,
                 width = width + 1
             ),
-            Expr::Call(fun, _) => write!(f, "(Call {:width$?})", fun, width = width + 1),
+            Expr::Call(fun, _) => {
+                write!(f, "(Call {:width$?})", fun, width = width + 1)
+            }
 
             Expr::Op(l, o, r) => write!(f, "({:?} of {:?} and {:?})", o, l, r,),
             Expr::Right(o, e) => write!(
@@ -396,8 +400,12 @@ where
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let (width, _tabs) = get_tabs(f);
         match self {
-            Either::Left(a) => write!(f, "(Left {:width$?})", a, width = width + 1),
-            Either::Right(b) => write!(f, "(Right {:width$?})", b, width = width + 1),
+            Either::Left(a) => {
+                write!(f, "(Left {:width$?})", a, width = width + 1)
+            }
+            Either::Right(b) => {
+                write!(f, "(Right {:width$?})", b, width = width + 1)
+            }
         }
     }
 }

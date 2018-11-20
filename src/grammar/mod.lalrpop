@@ -239,6 +239,26 @@ ModEqual: Opcode = PERCENT EQUAL => Opcode::Mod;
 
 AllAttr: Stmt = {
     <v:Var> EQUAL <e:Expr> => Stmt::Attr(v, e),
+    <v:Var> PLUS PLUS => Stmt::Attr(
+        v.clone(),
+        Box::new(
+            Expr::Op(
+                Box::new(Expr::Variable(v)),
+                Opcode::Add,
+                Box::new(Expr::Number(1))
+            )
+        )
+    ),
+    <v:Var> MINUS MINUS => Stmt::Attr(
+        v.clone(),
+        Box::new(
+            Expr::Op(
+                Box::new(Expr::Variable(v)),
+                Opcode::Sub,
+                Box::new(Expr::Number(1))
+            )
+        )
+    ),
     <a:Attr<AddEqual>> => Stmt::Attr(a.0, a.1),
     <a:Attr<SubEqual>> => Stmt::Attr(a.0, a.1),
     <a:Attr<MulEqual>> => Stmt::Attr(a.0, a.1),

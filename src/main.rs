@@ -1,3 +1,6 @@
+#![allow(unknown_lints)]
+#![warn(clippy::all)]
+
 extern crate clap;
 extern crate codespan;
 extern crate codespan_reporting;
@@ -10,11 +13,17 @@ mod gen;
 mod grammar;
 mod symbol_table;
 
-use clap::{app_from_crate, crate_authors, crate_description, crate_name, crate_version, Arg};
-use lalrpop_util::ParseError;
+use clap::{
+    app_from_crate, crate_authors, crate_description, crate_name,
+    crate_version, Arg,
+};
 use codespan::{ByteIndex, CodeMap, Span};
-use codespan_reporting::termcolor::{ColorChoice, StandardStream};
-use codespan_reporting::{emit, Diagnostic, Label};
+use codespan_reporting::{
+    emit,
+    termcolor::{ColorChoice, StandardStream},
+    Diagnostic, Label,
+};
+use lalrpop_util::ParseError;
 use std::process::exit;
 
 enum ExitCodes {
@@ -40,8 +49,10 @@ fn main() {
     let file = match code_map.add_filemap_from_disk(input_file_name) {
         Ok(file) => file,
         Err(_) => {
-            let file_error_diagnose =
-                Diagnostic::new_error(format!("no such file: {}", input_file_name));
+            let file_error_diagnose = Diagnostic::new_error(format!(
+                "no such file: {}",
+                input_file_name
+            ));
             emit(writer, &code_map, &file_error_diagnose).unwrap();
             exit(ExitCodes::FileError as i32)
         }
@@ -70,7 +81,8 @@ fn main() {
                     let span = Span::new(start, end);
 
                     let label = Label::new_primary(span);
-                    emit(writer, &code_map, &diagnostic.with_label(label)).unwrap();
+                    emit(writer, &code_map, &diagnostic.with_label(label))
+                        .unwrap();
                 }
                 ParseError::User { error } => {
                     let diagnostic = Diagnostic::new_error(error);
@@ -84,26 +96,33 @@ fn main() {
                         ByteIndex::from((token.2 + 1) as u32),
                     );
 
-                    let diagnostic =
-                        Diagnostic::new_error(format!("{} found, but was not expected", token));
+                    let diagnostic = Diagnostic::new_error(format!(
+                        "{} found, but was not expected",
+                        token
+                    ));
 
                     let span = Span::new(start, end);
 
                     let label = Label::new_primary(span);
-                    emit(writer, &code_map, &diagnostic.with_label(label)).unwrap();
+                    emit(writer, &code_map, &diagnostic.with_label(label))
+                        .unwrap();
                 }
                 ParseError::InvalidToken { location } => {
                     let span = file
                         .line_span(
-                            file.find_line(ByteIndex::from((location + 1) as u32))
-                                .unwrap(),
+                            file.find_line(ByteIndex::from(
+                                (location + 1) as u32,
+                            ))
+                            .unwrap(),
                         )
                         .unwrap();
 
-                    let diagnostic = Diagnostic::new_error("invalid line or EOF");
+                    let diagnostic =
+                        Diagnostic::new_error("invalid line or EOF");
                     let label = Label::new_primary(span);
 
-                    emit(writer, &code_map, &diagnostic.with_label(label)).unwrap();
+                    emit(writer, &code_map, &diagnostic.with_label(label))
+                        .unwrap();
                 }
             },
         }
@@ -204,7 +223,9 @@ fn parse_var_decl_with_expr_init() {
             "a".to_string(),
             ast::Type::Int,
             Some(Box::new(ast::Expr::Op(
-                Box::new(ast::Expr::Variable(ast::Variable::Single("b".to_string()))),
+                Box::new(ast::Expr::Variable(ast::Variable::Single(
+                    "b".to_string()
+                ))),
                 ast::Opcode::Add,
                 Box::new(ast::Expr::Number(1))
             )))

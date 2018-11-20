@@ -1,6 +1,5 @@
 use std::collections::{HashMap, LinkedList};
 
-use llvm::core::*;
 use llvm::prelude::*;
 
 #[derive(Clone, Debug)]
@@ -24,7 +23,7 @@ impl SymbolTable {
     }
 
     /// Get the symbol `identifier` in the current scope or in a lower scope
-    pub fn get(self: &Self, identifier: &String) -> Result<&Symbol, ()> {
+    pub fn get(self: &Self, identifier: &str) -> Result<&Symbol, ()> {
         for hash_symbol in self.list.iter() {
             if let Some(symbol) = hash_symbol.get(identifier) {
                 return Ok(symbol);
@@ -44,9 +43,9 @@ impl SymbolTable {
         self.list.pop_front();
     }
 
-    /// This function only set a identifier in the scope, possibly it will 
+    /// This function only set a identifier in the scope, possibly it will
     /// overwrite the value thats is current in the actual scope
-    pub fn set(self: &mut Self, identifier: &String, symbol: Symbol) {
+    pub fn set(self: &mut Self, identifier: &str, symbol: Symbol) {
         let front = self.list.front_mut().unwrap();
         front.insert(identifier.to_string(), symbol);
     }
