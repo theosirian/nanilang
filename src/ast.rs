@@ -66,6 +66,13 @@ pub enum Type {
     Int,
     Bool,
     Str,
+    Void,
+}
+
+impl Default for Type {
+    fn default() -> Type {
+        Type::Void
+    }
 }
 
 #[derive(Clone, PartialEq)]
@@ -74,20 +81,20 @@ pub enum Variable {
     Array(String, Box<Expr>),
 }
 
-#[derive(PartialEq)]
+#[derive(Clone, PartialEq)]
 pub enum Decl {
     Single(String, Type, Option<Box<Expr>>),
     Array(String, Type, u64, Option<Vec<Box<Expr>>>),
     Func(String, Option<Type>, Option<Vec<FuncParam>>, Block),
 }
 
-#[derive(PartialEq)]
+#[derive(Clone, PartialEq)]
 pub enum FuncParam {
     Single(String, Type),
     Array(String, Type),
 }
 
-#[derive(PartialEq)]
+#[derive(Clone, PartialEq)]
 pub enum Stmt {
     Attr(Variable, Box<Expr>),
     Stop,
@@ -101,13 +108,13 @@ pub enum Stmt {
     For(Box<Stmt>, Box<Expr>, Box<Stmt>, Block),
 }
 
-#[derive(PartialEq)]
+#[derive(Clone, PartialEq)]
 pub enum Either<A, B> {
     Left(A),
     Right(B),
 }
 
-#[derive(PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct Block {
     pub decl: Vec<Decl>,
     pub commands: Vec<Either<Stmt, Block>>,
@@ -198,6 +205,7 @@ impl fmt::Debug for Type {
             Type::Int => write!(f, "Int"),
             Type::Bool => write!(f, "Bool"),
             Type::Str => write!(f, "Str"),
+            Type::Void => write!(f, "Void"),
         }
     }
 }
@@ -357,7 +365,7 @@ impl fmt::Debug for Stmt {
 
             Stmt::If(expr, b, _elif, _else) => {
                 write!( f, "(If {:?} then (\n{:width$?})", expr, b, width = width + 1)?;
-                if _elif.len() == 0 {
+                if _elif.is_empty() {
                     write!(f, " no elseifs")?;
                 } else {
                     write!(f, " elseifs [")?;
@@ -423,7 +431,7 @@ impl fmt::Debug for Block {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let (width, tabs) = get_tabs(f);
         write!(f, "{tabs}(Block", tabs = tabs)?;
-        if self.decl.len() == 0 {
+        if self.decl.is_empty() {
             write!(f, "\n   {tabs}with no decls", tabs = tabs)?;
         } else {
             write!(f, "\n   {tabs}with decls [", tabs = tabs)?;
@@ -438,7 +446,7 @@ impl fmt::Debug for Block {
             }
             write!(f, "\n   {tabs}]", tabs = tabs)?;
         }
-        if self.commands.len() == 0 {
+        if self.commands.is_empty() {
             write!(f, " and with no commands\n{tabs})", tabs = tabs)
         } else {
             write!(f, " and with commands [")?;

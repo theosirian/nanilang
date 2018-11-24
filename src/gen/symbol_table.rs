@@ -2,12 +2,13 @@ use std::collections::{HashMap, LinkedList};
 
 use llvm::prelude::*;
 
+// TODO Should store the type
 #[derive(Clone, Debug)]
 pub enum Symbol {
     Variable(LLVMValueRef),
     Array(u32, LLVMValueRef),
     ArrayRef(LLVMValueRef),
-    Func(String),
+    Func(String), // TODO Should store tha function value and signature
 }
 
 #[derive(Clone, Debug)]

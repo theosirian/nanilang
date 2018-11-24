@@ -11,7 +11,6 @@ extern crate llvm_sys as llvm;
 mod ast;
 mod gen;
 mod grammar;
-mod symbol_table;
 
 use clap::{
     app_from_crate, crate_authors, crate_description, crate_name,
