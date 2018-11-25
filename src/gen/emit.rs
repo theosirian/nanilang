@@ -132,6 +132,18 @@ impl Emit<*mut LLVMValue> for Expr {
                         LLVMBuildMul(builder, lhs, rhs, as_str!("mul_result"))
                     }
                     Opcode::Mod => panic!("Não encontrei a chamada do modulo"),
+                    Opcode::Lesser
+                    | Opcode::LesserOrEqual
+                    | Opcode::Greater
+                    | Opcode::GreaterOrEqual
+                    | Opcode::Equal
+                    | Opcode::Different => LLVMBuildICmp(
+                        context.builder,
+                        op.pred(),
+                        lhs,
+                        rhs,
+                        as_str!("cmp"),
+                    ),
                     _ => panic!("Not implemented"),
                 };
                 Ok(value)
@@ -165,8 +177,123 @@ impl Emit<()> for Stmt {
                 let ptr_var = var.emit(context).unwrap();
                 let expression = expression.emit(context).unwrap();
 
-                LLVMBuildStore(builder, ptr_var, expression);
+                LLVMBuildStore(builder, expression, ptr_var);
                 Ok(())
+            }
+            Stmt::Call(identifier, expressions) => {
+                Expr::Call(identifier.to_string(), expressions.clone())
+                    .emit(context)
+                    .unwrap();
+                Ok(())
+            }
+            Stmt::For(init, predicate, step, block) => {
+                init.emit(context).unwrap();
+                let block_predicate = LLVMAppendBasicBlockInContext(
+                    context.context,
+                    context.actual_function.unwrap().0,
+                    as_str!("predicate_for"),
+                );
+                let block_for = LLVMAppendBasicBlockInContext(
+                    context.context,
+                    context.actual_function.unwrap().0,
+                    as_str!("block_for"),
+                );
+                let block_step = LLVMAppendBasicBlockInContext(
+                    context.context,
+                    context.actual_function.unwrap().0,
+                    as_str!("block_step"),
+                );
+                let block_merge = LLVMAppendBasicBlockInContext(
+                    context.context,
+                    context.actual_function.unwrap().0,
+                    as_str!("merge_for"),
+                );
+                context.actual_loop = Some((block_merge, block_step));
+
+                LLVMBuildBr(context.builder, block_predicate);
+
+                LLVMPositionBuilderAtEnd(context.builder, block_predicate);
+                LLVMBuildCondBr(
+                    context.builder,
+                    predicate.emit(context).unwrap(),
+                    block_for,
+                    block_merge,
+                );
+
+                LLVMPositionBuilderAtEnd(context.builder, block_for);
+                block.emit(context).unwrap();
+                LLVMBuildBr(context.builder, block_step);
+                LLVMPositionBuilderAtEnd(context.builder, block_step);
+                step.emit(context).unwrap();
+                LLVMBuildBr(context.builder, block_predicate);
+
+                LLVMPositionBuilderAtEnd(context.builder, block_merge);
+
+                Ok(())
+            }
+            Stmt::While(predicate, block) => {
+                let block_predicate = LLVMAppendBasicBlockInContext(
+                    context.context,
+                    context.actual_function.unwrap().0,
+                    as_str!("predicate_for"),
+                );
+                let block_while = LLVMAppendBasicBlockInContext(
+                    context.context,
+                    context.actual_function.unwrap().0,
+                    as_str!("block_for"),
+                );
+                let block_merge = LLVMAppendBasicBlockInContext(
+                    context.context,
+                    context.actual_function.unwrap().0,
+                    as_str!("merge_for"),
+                );
+                context.actual_loop = Some((block_merge, block_predicate));
+
+                LLVMBuildBr(context.builder, block_predicate);
+
+                LLVMPositionBuilderAtEnd(context.builder, block_predicate);
+                LLVMBuildCondBr(
+                    context.builder,
+                    predicate.emit(context).unwrap(),
+                    block_while,
+                    block_merge,
+                );
+
+                LLVMPositionBuilderAtEnd(context.builder, block_while);
+                block.emit(context).unwrap();
+                LLVMBuildBr(context.builder, block_predicate);
+
+                LLVMPositionBuilderAtEnd(context.builder, block_merge);
+
+                Ok(())
+            }
+            Stmt::Stop => {
+                if let Some((merge, _)) = context.actual_loop {
+                    LLVMBuildBr(context.builder, merge);
+                    Ok(())
+                } else {
+                    Err("Stop not in a loop".to_string())
+                }
+            }
+            Stmt::Skip => {
+                if let Some((_, predicate)) = context.actual_loop {
+                    LLVMBuildBr(context.builder, predicate);
+                    Ok(())
+                } else {
+                    Err("Skip not in a loop".to_string())
+                }
+            }
+            Stmt::Return(expression) => {
+                if let Some(expression) = expression {
+                    LLVMBuildRet(
+                        context.builder,
+                        expression.emit(context).unwrap(),
+                    );
+                    Ok(())
+                } else {
+                    LLVMBuildRetVoid(context.builder);
+                    Ok(())
+                }
             }
             _ => panic!("Not implemented"),
         }
@@ -175,13 +302,25 @@ impl Emit<()> for Stmt {
 
 impl Emit<()> for Decl {
     unsafe fn emit(self: &Self, context: &mut Context) -> Result<(), String> {
-        if let Some(_) = context.actual_function {
+        if context.actual_function.is_some() {
             // When local
+            let alloc_builder = LLVMCreateBuilderInContext(context.context);
+            let first_intr =
+                LLVMGetFirstInstruction(context.actual_function.unwrap().1);
+            if !first_intr.is_null() {
+                LLVMPositionBuilderBefore(alloc_builder, first_intr);
+            } else {
+                LLVMPositionBuilderAtEnd(
+                    alloc_builder,
+                    context.actual_function.unwrap().1,
+                );
+            }
+
             let builder = context.builder;
             match self {
                 Decl::Single(identifier, type_of, expression) => {
                     let ptr_vlr = LLVMBuildAlloca(
-                        builder,
+                        alloc_builder,
                         type_of.emit(context).unwrap(),
                         as_str!(identifier),
                     );
@@ -192,8 +331,8 @@ impl Emit<()> for Decl {
                     if let Some(expression) = expression {
                         LLVMBuildStore(
                             builder,
-                            ptr_vlr,
                             expression.emit(context).unwrap(),
+                            ptr_vlr,
                         );
                         Ok(())
                     } else {
@@ -261,7 +400,7 @@ impl Emit<()> for Decl {
 
                     context.symbol_table.initialize_scope();
 
-                    context.actual_function = Some(function);
+                    context.actual_function = Some((function, entry_block));
                     LLVMPositionBuilderAtEnd(context.builder, entry_block);
 
                     vec_params.iter().enumerate().for_each(|(index, param)| {
@@ -281,8 +420,8 @@ impl Emit<()> for Decl {
 
                                 LLVMBuildStore(
                                     context.builder,
-                                    ptr_vlr,
                                     function_param,
+                                    ptr_vlr,
                                 );
                             }
                             FuncParam::Array(_identifier, _type_of) => {
