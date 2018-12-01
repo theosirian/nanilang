@@ -295,6 +295,91 @@ impl Emit<()> for Stmt {
                     Ok(())
                 }
             }
+            Stmt::If(expression, block, elifs, else_block) => {
+                let block_if_predicate = LLVMAppendBasicBlockInContext(
+                    context.context,
+                    context.actual_function.unwrap().0,
+                    as_str!("if_predicate"),
+                );
+                LLVMBuildBr(context.builder, block_if_predicate);
+                let block_if_then = LLVMAppendBasicBlockInContext(
+                    context.context,
+                    context.actual_function.unwrap().0,
+                    as_str!("if_then"),
+                );
+                let block_merge = LLVMAppendBasicBlockInContext(
+                    context.context,
+                    context.actual_function.unwrap().0,
+                    as_str!("merge_if"),
+                );
+                let last_block = match else_block {
+                    Some(else_block) => {
+                        let block_if_else = LLVMAppendBasicBlockInContext(
+                            context.context,
+                            context.actual_function.unwrap().0,
+                            as_str!("if_else"),
+                        );
+                        LLVMPositionBuilderAtEnd(
+                            context.builder,
+                            block_if_else,
+                        );
+                        else_block.emit(context).unwrap();
+                        LLVMBuildBr(context.builder, block_merge);
+
+                        block_if_else
+                    }
+                    None => block_merge,
+                };
+                let block_else_to_jump = elifs.iter().rev().fold(
+                    last_block,
+                    |last_block, actual_block| {
+                        let block_elif_predicate =
+                            LLVMAppendBasicBlockInContext(
+                                context.context,
+                                context.actual_function.unwrap().0,
+                                as_str!("block_elif"),
+                            );
+                        let block_elif_then = LLVMAppendBasicBlockInContext(
+                            context.context,
+                            context.actual_function.unwrap().0,
+                            as_str!("block_elif"),
+                        );
+                        LLVMPositionBuilderAtEnd(
+                            context.builder,
+                            block_elif_predicate,
+                        );
+                        LLVMBuildCondBr(
+                            context.builder,
+                            actual_block.0.emit(context).unwrap(),
+                            block_elif_then,
+                            last_block,
+                        );
+                        LLVMPositionBuilderAtEnd(
+                            context.builder,
+                            block_elif_then,
+                        );
+                        actual_block.1.emit(context).unwrap();
+                        LLVMBuildBr(context.builder, block_merge);
+
+                        block_elif_predicate
+                    },
+                );
+
+                LLVMPositionBuilderAtEnd(context.builder, block_if_predicate);
+                let cmp_expression = expression.emit(context).unwrap();
+                LLVMBuildCondBr(
+                    context.builder,
+                    cmp_expression,
+                    block_if_then,
+                    block_else_to_jump,
+                );
+                LLVMPositionBuilderAtEnd(context.builder, block_if_then);
+                block.emit(context).unwrap();
+                LLVMBuildBr(context.builder, block_merge);
+                LLVMPositionBuilderAtEnd(context.builder, block_merge);
+
+                Ok(())
+            }
             _ => panic!("Not implemented"),
         }
     }
