@@ -16,42 +16,47 @@ impl Emit<*mut LLVMType> for Type {
             Type::Bool => Ok(LLVMInt1TypeInContext(context.context)),
             Type::Void => Ok(LLVMVoidTypeInContext(context.context)),
             Type::Str => panic!("Not implemented"),
+            Type::Agg(_) => panic!("Not implemented"),
         }
     }
 }
 
-impl Emit<*mut LLVMValue> for Variable {
+impl Emit<(*mut LLVMValue, Type)> for Variable {
     unsafe fn emit(
         self: &Self,
         context: &mut Context,
-    ) -> Result<*mut LLVMValue, String> {
+    ) -> Result<(*mut LLVMValue, Type), String> {
         let builder = context.builder;
         match self {
             Variable::Single(identifier) => {
                 if let Ok(value) = context.symbol_table.get(identifier) {
                     match value {
-                        Symbol::Variable(value) => Ok(*value),
-                        _ => panic!("Variable type mismatch"),
+                        Symbol::Variable(value, type_of) => {
+                            Ok((*value, type_of.clone()))
+                        }
+                        _ => Err("Variable type mismatch".to_string()),
                     }
                 } else {
-                    Err(String::from("variabe not declared"))
+                    Err("variabe not declared".to_string())
                 }
             }
             Variable::Array(identifier, expression) => {
                 if let Ok(value) = context.clone().symbol_table.get(identifier)
                 {
-                    let index = expression.emit(context).unwrap();
+                    let (index, type_of_index) =
+                        expression.emit(context).unwrap();
 
                     match value {
-                        Symbol::ArrayRef(value) | Symbol::Array(_, value) => {
-                            Ok(LLVMBuildInBoundsGEP(
+                        Symbol::Array(value, type_of) => Ok((
+                            LLVMBuildInBoundsGEP(
                                 builder,
                                 *value,
                                 [index].as_mut_ptr(),
                                 1,
                                 as_str!("ptr_value"),
-                            ))
-                        }
+                            ),
+                            type_of.clone(),
+                        )),
                         _ => Err("Variable type mismatch".to_string()),
                     }
                 } else {
@@ -62,25 +67,35 @@ impl Emit<*mut LLVMValue> for Variable {
     }
 }
 
-impl Emit<*mut LLVMValue> for Expr {
+impl Emit<(*mut LLVMValue, Type)> for Expr {
     unsafe fn emit(
         self: &Self,
         context: &mut Context,
-    ) -> Result<*mut LLVMValue, String> {
+    ) -> Result<(*mut LLVMValue, Type), String> {
         match self {
-            Expr::Number(number) => {
-                Ok(LLVMConstInt(Type::Int.emit(context).unwrap(), *number, 1))
-            }
-            Expr::True => {
-                Ok(LLVMConstInt(Type::Bool.emit(context).unwrap(), 1, 1))
-            }
-            Expr::False => {
-                Ok(LLVMConstInt(Type::Bool.emit(context).unwrap(), 0, 1))
-            }
+            Expr::Number(number) => Ok((
+                LLVMConstInt(Type::Int.emit(context).unwrap(), *number, 1),
+                Type::Int,
+            )),
+            Expr::True => Ok((
+                LLVMConstInt(Type::Bool.emit(context).unwrap(), 1, 1),
+                Type::Bool,
+            )),
+            Expr::False => Ok((
+                LLVMConstInt(Type::Bool.emit(context).unwrap(), 0, 1),
+                Type::Bool,
+            )),
             Expr::Variable(var) => {
-                let ptr_var = var.emit(context).unwrap();
+                let (ptr_var, type_of) = var.emit(context).unwrap();
 
-                Ok(LLVMBuildLoad(context.builder, ptr_var, as_str!("var_load")))
+                Ok((
+                    LLVMBuildLoad(
+                        context.builder,
+                        ptr_var,
+                        as_str!("var_load"),
+                    ),
+                    type_of,
+                ))
             }
             Expr::Call(identifier, params) => {
                 let builder = context.builder;
@@ -89,23 +104,29 @@ impl Emit<*mut LLVMValue> for Expr {
                 {
                     match function {
                         // TODO Put function value in symbols table
-                        Symbol::Func(function) => {
-                            let function = LLVMGetNamedFunction(
-                                context.module,
-                                as_str!(function),
-                            );
+                        Symbol::Func(function, function_signature) => {
                             let params = params.clone().unwrap_or_default();
+                            let function_signature = function_signature.clone();
 
-                            Ok(LLVMBuildCall(
-                                builder,
-                                function,
-                                params
-                                    .iter()
-                                    .map(|param| param.emit(context).unwrap())
-                                    .collect::<Vec<*mut LLVMValue>>()
-                                    .as_mut_ptr(),
-                                params.len() as u32,
-                                as_str!("call"),
+                            Ok((
+                                LLVMBuildCall(
+                                    builder,
+                                    *function,
+                                    params
+                                        .iter()
+                                        .zip(function_signature.1)
+                                        .map(|(param, param_expected_type)| {
+                                            let (value, type_of) =
+                                                param.emit(context).unwrap();
+                                            // TODO Check type_of with function_signature
+                                            value
+                                        })
+                                        .collect::<Vec<*mut LLVMValue>>()
+                                        .as_mut_ptr(),
+                                    params.len() as u32,
+                                    as_str!("call"),
+                                ),
+                                function_signature.0,
                             ))
                         }
                         _ => Err("Type mismatch".to_string()),
@@ -116,8 +137,8 @@ impl Emit<*mut LLVMValue> for Expr {
             }
             Expr::Op(lhs, op, rhs) => {
                 let builder = context.builder;
-                let lhs = lhs.emit(context).unwrap();
-                let rhs = rhs.emit(context).unwrap();
+                let (lhs, type_of_lhs) = lhs.emit(context).unwrap();
+                let (rhs, type_of_rhs) = rhs.emit(context).unwrap();
                 let value = match op {
                     Opcode::Add => {
                         LLVMBuildAdd(builder, lhs, rhs, as_str!("add_result"))
@@ -146,11 +167,11 @@ impl Emit<*mut LLVMValue> for Expr {
                     ),
                     _ => panic!("Not implemented"),
                 };
-                Ok(value)
+                Ok((value, Type::Int)) // FIXME type_of depend on the operand
             }
             Expr::Right(op, expression) => {
                 let builder = context.builder;
-                let expression = expression.emit(context).unwrap();
+                let (expression, type_of) = expression.emit(context).unwrap();
                 let value = match op {
                     Opcode::Not => {
                         LLVMBuildNot(builder, expression, as_str!("not_result"))
@@ -162,7 +183,7 @@ impl Emit<*mut LLVMValue> for Expr {
                     ),
                     _ => panic!("Should not do this"),
                 };
-                Ok(value)
+                Ok((value, Type::Int)) // FIXME type_of depend on the operand
             }
             Expr::Ternary(_, _, _) => panic!("Not implemented yet"),
         }
@@ -174,8 +195,9 @@ impl Emit<()> for Stmt {
         let builder = context.builder;
         match self {
             Stmt::Attr(var, expression) => {
-                let ptr_var = var.emit(context).unwrap();
-                let expression = expression.emit(context).unwrap();
+                let (ptr_var, type_of) = var.emit(context).unwrap();
+                let (expression, type_of_expression) =
+                    expression.emit(context).unwrap();
 
                 LLVMBuildStore(builder, expression, ptr_var);
                 Ok(())
@@ -212,10 +234,12 @@ impl Emit<()> for Stmt {
 
                 LLVMBuildBr(context.builder, block_predicate);
 
+                let (predicate, type_of_predicate) =
+                    predicate.emit(context).unwrap();
                 LLVMPositionBuilderAtEnd(context.builder, block_predicate);
                 LLVMBuildCondBr(
                     context.builder,
-                    predicate.emit(context).unwrap(),
+                    predicate,
                     block_for,
                     block_merge,
                 );
@@ -251,10 +275,12 @@ impl Emit<()> for Stmt {
 
                 LLVMBuildBr(context.builder, block_predicate);
 
+                let (predicate, type_of_predicate) =
+                    predicate.emit(context).unwrap();
                 LLVMPositionBuilderAtEnd(context.builder, block_predicate);
                 LLVMBuildCondBr(
                     context.builder,
-                    predicate.emit(context).unwrap(),
+                    predicate,
                     block_while,
                     block_merge,
                 );
@@ -285,10 +311,9 @@ impl Emit<()> for Stmt {
             }
             Stmt::Return(expression) => {
                 if let Some(expression) = expression {
-                    LLVMBuildRet(
-                        context.builder,
-                        expression.emit(context).unwrap(),
-                    );
+                    let (expression, type_of) =
+                        expression.emit(context).unwrap();
+                    LLVMBuildRet(context.builder, expression);
                     Ok(())
                 } else {
                     LLVMBuildRetVoid(context.builder);
@@ -348,9 +373,12 @@ impl Emit<()> for Stmt {
                             context.builder,
                             block_elif_predicate,
                         );
+                        let (elif_predicate, type_of_elif_predicate) =
+                            actual_block.0.emit(context).unwrap();
+
                         LLVMBuildCondBr(
                             context.builder,
-                            actual_block.0.emit(context).unwrap(),
+                            elif_predicate,
                             block_elif_then,
                             last_block,
                         );
@@ -366,7 +394,8 @@ impl Emit<()> for Stmt {
                 );
 
                 LLVMPositionBuilderAtEnd(context.builder, block_if_predicate);
-                let cmp_expression = expression.emit(context).unwrap();
+                let (cmp_expression, type_of) =
+                    expression.emit(context).unwrap();
                 LLVMBuildCondBr(
                     context.builder,
                     cmp_expression,
@@ -411,20 +440,38 @@ impl Emit<()> for Decl {
                     );
                     context
                         .symbol_table
-                        .set(identifier, Symbol::Variable(ptr_vlr));
+                        .set(identifier, Symbol::Variable(ptr_vlr, type_of.clone()))
+                        .expect("Can't set the variable, probably the variable is already declared");
 
                     if let Some(expression) = expression {
-                        LLVMBuildStore(
-                            builder,
-                            expression.emit(context).unwrap(),
-                            ptr_vlr,
-                        );
+                        let (expression, type_of_expression) =
+                            expression.emit(context).unwrap();
+                        LLVMBuildStore(builder, expression, ptr_vlr);
                         Ok(())
                     } else {
                         Ok(())
                     }
                 }
-                _ => panic!("Not implemented!"),
+                Decl::Array(identifier, type_of, size, list_expression) => {
+                    let (expression_size, _) =
+                        Expr::Number(*size).emit(context).unwrap();
+
+                    let ptr_vlr = LLVMBuildArrayAlloca(
+                        context.builder,
+                        type_of.emit(context).unwrap(),
+                        expression_size,
+                        as_str!(identifier),
+                    );
+                    context
+                        .symbol_table
+                        .set(identifier, Symbol::Variable(ptr_vlr, type_of.clone()))
+                        .expect("Can't set the variable, probably the variable is already declared");
+
+                    // TODO Initialization
+
+                    Ok(())
+                }
+                _ => Err("Function not expected".to_string()),
             }
         } else {
             // When global
@@ -436,15 +483,44 @@ impl Emit<()> for Decl {
                         as_str!(identifier),
                     );
 
+                    context
+                        .symbol_table
+                        .set(
+                            identifier,
+                            Symbol::Variable(decl, type_of.clone()),
+                        )
+                        .unwrap();
+
                     if let Some(expression) = expression {
-                        LLVMSetInitializer(
-                            decl,
-                            expression.emit(context).unwrap(),
-                        );
+                        let (value, type_of) =
+                            expression.emit(context).unwrap();
+
+                        LLVMSetInitializer(decl, value);
                         Ok(())
                     } else {
                         Ok(())
                     }
+                }
+                Decl::Array(identifier, type_of, size, list_expression) => {
+                    let array_type = LLVMArrayType(
+                        type_of.emit(context).unwrap(),
+                        *size as u32,
+                    );
+
+                    let decl = LLVMAddGlobal(
+                        context.module,
+                        array_type,
+                        as_str!(identifier),
+                    );
+
+                    context
+                        .symbol_table
+                        .set(identifier, Symbol::Array(decl, type_of.clone()))
+                        .unwrap();
+
+                    // TODO Initialization
+
+                    Ok(())
                 }
                 Decl::Func(identifier, return_type, vec_params, block) => {
                     let vec_params = vec_params.clone().unwrap_or_default();
@@ -477,6 +553,32 @@ impl Emit<()> for Decl {
                         function_type,
                     );
 
+                    context
+                        .symbol_table
+                        .set(
+                            identifier,
+                            Symbol::Func(
+                                function,
+                                (
+                                    return_type.clone().unwrap_or_default(),
+                                    vec_params
+                                        .iter()
+                                        .map(|param| match param {
+                                            FuncParam::Single(_, type_of) => {
+                                                type_of.clone()
+                                            }
+                                            FuncParam::Array(_, type_of) => {
+                                                Type::Agg(Box::new(
+                                                    type_of.clone(),
+                                                ))
+                                            }
+                                        })
+                                        .collect::<Vec<_>>(),
+                                ),
+                            ),
+                        )
+                        .unwrap();
+
                     let entry_block = LLVMAppendBasicBlockInContext(
                         context.context,
                         function,
@@ -501,7 +603,8 @@ impl Emit<()> for Decl {
                                 );
                                 context
                                     .symbol_table
-                                    .set(identifier, Symbol::Variable(ptr_vlr));
+                                    .set(identifier, Symbol::Variable(ptr_vlr, type_of.clone()))
+                                    .expect("Can't set the variable, probably the variable is already declared");
 
                                 LLVMBuildStore(
                                     context.builder,
@@ -521,7 +624,6 @@ impl Emit<()> for Decl {
 
                     Ok(())
                 }
-                _ => panic!("Not implemented"),
             }
         }
     }
