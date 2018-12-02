@@ -67,6 +67,7 @@ pub enum Type {
     Bool,
     Str,
     Void,
+    Agg(Box<Type>),
 }
 
 impl Default for Type {
@@ -206,6 +207,7 @@ impl fmt::Debug for Type {
             Type::Bool => write!(f, "Bool"),
             Type::Str => write!(f, "Str"),
             Type::Void => write!(f, "Void"),
+            Type::Agg(type_of) => write!(f, "Agg({:?})", *type_of),
         }
     }
 }
