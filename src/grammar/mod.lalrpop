@@ -1,4 +1,5 @@
 use lalrpop_util::{ ErrorRecovery };
+use codespan::{ ByteIndex, Span };
 
 use std::str::FromStr;
 use ast::*;
@@ -57,12 +58,24 @@ Num: u64 = r"[0-9]+" => u64::from_str(<>).unwrap();
 Id: String = r"[a-zA-Z_][a-zA-Z0-9_]*" => String::from(<>);
 
 Var: Variable = {
-    <Id> OPEN_BRACKET <Expr> CLOSE_BRACKET => Variable::Array(<>),
-    <Id> => Variable::Single(<>),
+    <l:@L> <i:Id> OPEN_BRACKET <e:Expr> CLOSE_BRACKET <r:@R> => {
+        let location = Span::new(ByteIndex(l as u32), ByteIndex(r as u32));
+
+        Variable::Array(i, e, location)
+    },
+    <l:@L> <i:Id> <r:@R> => {
+        let location = Span::new(ByteIndex(l as u32), ByteIndex(r as u32));
+
+        Variable::Single(i, location)
+    }
 };
 
 Tier<Op, Next>: Box<Expr> = {
-    Tier<Op, Next> Op Next => Box::new(Expr::Op(<>)),
+    <l:@L> <e1:Tier<Op, Next>> <o:Op> <e2:Next> <r:@R> => {
+        let location = Span::new(ByteIndex(l as u32), ByteIndex(r as u32));
+
+        Box::new(Expr::Op(e1, o, e2, location))
+    },
     Next,
 };
 
@@ -88,23 +101,51 @@ Either<T, U>: (Option<T>, Option<U>) = {
 };
 
 Term: Box<Expr> = {
-    TRUE => Box::new(Expr::True),
-    FALSE => Box::new(Expr::False),
-    Num => Box::new(Expr::Number(<>)),
-    Var => Box::new(Expr::Variable(<>)),
-    <Id> OPEN_PARENS <Comma<Expr>?> CLOSE_PARENS => Box::new(Expr::Call(<>)),
+    <l:@L> TRUE <r:@R> => {
+        let location = Span::new(ByteIndex(l as u32), ByteIndex(r as u32));
+
+        Box::new(Expr::True(location))
+    },
+    <l:@L> FALSE <r:@R> => {
+        let location = Span::new(ByteIndex(l as u32), ByteIndex(r as u32));
+
+        Box::new(Expr::False(location))
+    },
+    <l:@L> <n:Num> <r:@R> => {
+        let location = Span::new(ByteIndex(l as u32), ByteIndex(r as u32));
+
+        Box::new(Expr::Number(n, location))
+    },
+    <l:@L> <v:Var> <r:@R> => {
+        let location = Span::new(ByteIndex(l as u32), ByteIndex(r as u32));
+
+        Box::new(Expr::Variable(v, location))
+    },
+    <l:@L> <i:Id> OPEN_PARENS <e:Comma<Expr>?> CLOSE_PARENS <r:@R> => {
+        let location = Span::new(ByteIndex(l as u32), ByteIndex(r as u32));
+
+        Box::new(Expr::Call(i, e, location))
+    },
     OPEN_PARENS <Expr> CLOSE_PARENS,
 };
 
 NegativeOp: Opcode = MINUS => Opcode::Negative;
 Negative: Box<Expr> = {
-    NegativeOp Term => Box::new(Expr::Right(<>)),
+    <l:@L> <o:NegativeOp> <e:Term> <r:@R> => {
+        let location = Span::new(ByteIndex(l as u32), ByteIndex(r as u32));
+
+        Box::new(Expr::Right(o, e, location))
+    },
     Term,
 };
 
 NotOp: Opcode = EXCLAMATION => Opcode::Not;
 Not: Box<Expr> = {
-    NotOp Negative=> Box::new(Expr::Right(<>)),
+    <l:@L> <o:NotOp> <e:Negative> <r:@R> => {
+        let location = Span::new(ByteIndex(l as u32), ByteIndex(r as u32));
+
+        Box::new(Expr::Right(o, e, location))
+    },
     Negative,
 };
 
@@ -146,7 +187,11 @@ OrOp: Opcode = PIPE PIPE => Opcode::Or;
 Or = Tier<OrOp, And>;
 
 Ternary: Box<Expr> = {
-    <Or> QUESTION <Or> COLON <Expr> => Box::new(Expr::Ternary(<>)),
+    <l:@L> <p:Or> QUESTION <t:Or> COLON <e:Expr> <r:@R> => {
+        let location = Span::new(ByteIndex(l as u32), ByteIndex(r as u32));
+
+        Box::new(Expr::Ternary(p, t, e, location))
+    },
     Or,
 };
 
@@ -158,15 +203,30 @@ Type: Type = {
     STR => Type::Str,
 };
 
-VarArrayDecl: (String, u64, Option<Vec<Box<Expr>>>) = {
-    // TODO Possible error recovery is when a user insert an expression in place of a number
-    <a:Id> OPEN_BRACKET <n:Num> CLOSE_BRACKET EQUAL OPEN_BRACE <f:Comma<Expr>> CLOSE_BRACE => (a, n, Some(f)),
-    <a:Id> OPEN_BRACKET <n:Num> CLOSE_BRACKET => (a, n, None),
+VarArrayDecl: (String, u64, Option<Vec<Box<Expr>>>, Span<ByteIndex>) = {
+    <l:@L> <a:Id> OPEN_BRACKET <n:Num> CLOSE_BRACKET <r:@R> EQUAL OPEN_BRACE <f:Comma<Expr>> CLOSE_BRACE => {
+        let location = Span::new(ByteIndex(l as u32), ByteIndex(r as u32));
+
+        (a, n, Some(f), location)
+    },
+    <l:@L> <a:Id> OPEN_BRACKET <n:Num> CLOSE_BRACKET <r:@R> => {
+        let location = Span::new(ByteIndex(l as u32), ByteIndex(r as u32));
+
+        (a, n, None, location)
+    }
 };
 
-VarSingleDecl: (String, Option<Box<Expr>>) = {
-    <i:Id> EQUAL <e:Expr> => (i, Some(e)),
-    <Id> => (<>, None),
+VarSingleDecl: (String, Option<Box<Expr>>, Span<ByteIndex>) = {
+    <l:@L> <i:Id> <r:@R> EQUAL <e:Expr> => {
+        let location = Span::new(ByteIndex(l as u32), ByteIndex(r as u32));
+        
+        (i, Some(e), location)
+    },
+    <l:@L> <i:Id> <r:@R> => {
+        let location = Span::new(ByteIndex(l as u32), ByteIndex(r as u32));
+
+        (i, None, location)
+    }
 };
 
 VarDeclList = Comma<Either<VarSingleDecl, VarArrayDecl>>;
@@ -176,39 +236,47 @@ VarDecl: Vec<Decl> = {
         let mut f = Vec::new();
         for i in d {
             if let Some(j) = i.0 {
-                f.push(Decl::Single(j.0, t.clone(), j.1));
+                f.push(Decl::Single(j.0, t.clone(), j.1, j.2));
             } else if let Some(j) = i.1 {
-                f.push(Decl::Array(j.0, t.clone(), j.1, j.2));
+                f.push(Decl::Array(j.0, t.clone(), j.1, j.2, j.3));
             }
         }
         f
     },
 };
 
-ParamArrayDecl: String = {
-    <Id> OPEN_BRACKET CLOSE_BRACKET => <>,
+ParamArrayDecl: (String, Span<ByteIndex>) = {
+    <l:@L> <i:Id> OPEN_BRACKET CLOSE_BRACKET <r:@R> => {
+        let location = Span::new(ByteIndex(l as u32), ByteIndex(r as u32));
+
+        (i, location)
+    },
 };
 
-ParamSingleDecl: String = {
-    <Id> => <>,
+ParamSingleDecl: (String, Span<ByteIndex>) = {
+    <l:@L> <i:Id> <r:@R> => {
+        let location = Span::new(ByteIndex(l as u32), ByteIndex(r as u32));
+
+        (i, location)
+    },
 };
 
 ParamDeclList = Comma<Either<ParamSingleDecl, ParamArrayDecl>>;
 
-FuncDecl: Decl = DEF <i:Id> OPEN_PARENS <p:SemiColon<(<ParamDeclList> COLON <Type>)>?> CLOSE_PARENS <t:(COLON <Type>)?> <b:Block> => {
-    // TODO Register the location of function declaration to show to the user in case of redeclaration
+FuncDecl: Decl = <l:@L> DEF <i:Id> OPEN_PARENS <p:SemiColon<(<ParamDeclList> COLON <Type>)>?> CLOSE_PARENS <t:(COLON <Type>)?> <r:@R> <b:Block> => {
     let mut parameters_vector = Vec::new();
+    let location = Span::new(ByteIndex(l as u32), ByteIndex(r as u32));
+
     if let Some(parameter_list) = p {
         for parameter in parameter_list {
             // parameter is an tuple of (list, type)
-            let declaration_list = parameter.0;
-            let type_of = parameter.1;
+            let ( declaration_list, type_of ) = parameter;
             for declaration in declaration_list {
                 // !! The declaration is a parser Either not an AST::Either
-                if let Some(identifier) = declaration.0 { // If either is fullfiled in the left is a single variable
-                    parameters_vector.push(FuncParam::Single(identifier, type_of.clone()));
-                } else if let Some(identifier) = declaration.1 { // Else if is fullfiled in the right side is an array
-                    parameters_vector.push(FuncParam::Array(identifier, type_of.clone()));
+                if let Some((identifier, location)) = declaration.0 { // If either is fullfiled in the left is a single variable
+                    parameters_vector.push(FuncParam::Single(identifier, type_of.clone(), location));
+                } else if let Some((identifier, location)) = declaration.1 { // Else if is fullfiled in the right side is an array
+                    parameters_vector.push(FuncParam::Array(identifier, type_of.clone(), location));
                 }
             }
         }
@@ -216,9 +284,9 @@ FuncDecl: Decl = DEF <i:Id> OPEN_PARENS <p:SemiColon<(<ParamDeclList> COLON <Typ
         // t -> function return type, could be None, when it's a procedure
         // parameter_list -- Could be None, when it does not have any parameter
         // b -> function block
-        Decl::Func(i, t, Some(parameters_vector), b) // When have parameters
+        Decl::Func(i, t, Some(parameters_vector), b, location) // When have parameters
     } else {
-        Decl::Func(i, t, None, b) // When does not have parameter
+        Decl::Func(i, t, None, b, location) // When does not have parameter
     }
 };
 
@@ -227,8 +295,12 @@ Decl: Vec<Decl> = {
     FuncDecl => vec![<>],
 };
 
-Attr<O>: (Variable, Box<Expr>)  = {
-    <v:Var> <o:O> <e:Expr> => (v.clone(), Box::new(Expr::Op(Box::new(Expr::Variable(v)), o, e))),
+Attr<O>: (Variable, Box<Expr>, Span<ByteIndex>)  = {
+    <l:@L> <v:Var> <o:O> <e:Expr> <r:@R> => {
+        let location = Span::new(ByteIndex(l as u32), ByteIndex(r as u32));
+
+        (v.clone(), Box::new(Expr::Op(Box::new(Expr::Variable(v, location)), o, e, location)), location)
+    }
 };
 
 AddEqual: Opcode = PLUS EQUAL => Opcode::Add;
@@ -238,52 +310,98 @@ DivEqual: Opcode = SLASH EQUAL => Opcode::Div;
 ModEqual: Opcode = PERCENT EQUAL => Opcode::Mod;
 
 AllAttr: Stmt = {
-    <v:Var> EQUAL <e:Expr> => Stmt::Attr(v, e),
-    <v:Var> PLUS PLUS => Stmt::Attr(
-        v.clone(),
-        Box::new(
-            Expr::Op(
-                Box::new(Expr::Variable(v)),
-                Opcode::Add,
-                Box::new(Expr::Number(1))
-            )
+    <l:@L> <v:Var> EQUAL <e:Expr> <r:@R> => {
+        let location = Span::new(ByteIndex(l as u32), ByteIndex(r as u32));
+
+        Stmt::Attr(v, e, location)
+    },
+    <l:@L> <v:Var> PLUS PLUS <r:@R> => {
+        let location = Span::new(ByteIndex(l as u32), ByteIndex(r as u32));
+        
+        Stmt::Attr(
+            v.clone(),
+            Box::new(
+                Expr::Op(
+                    Box::new(Expr::Variable(v, location)),
+                    Opcode::Add,
+                    Box::new(Expr::Number(1, location)),
+                    location
+                )
+            ),
+            location
         )
-    ),
-    <v:Var> MINUS MINUS => Stmt::Attr(
-        v.clone(),
-        Box::new(
-            Expr::Op(
-                Box::new(Expr::Variable(v)),
-                Opcode::Sub,
-                Box::new(Expr::Number(1))
-            )
+    },
+    <l:@L> <v:Var> MINUS MINUS <r:@R> => {
+        let location = Span::new(ByteIndex(l as u32), ByteIndex(r as u32));
+
+        Stmt::Attr(
+            v.clone(),
+            Box::new(
+                Expr::Op(
+                    Box::new(Expr::Variable(v, location)),
+                    Opcode::Sub,
+                    Box::new(Expr::Number(1, location)),
+                    location
+                )
+            ),
+            location
         )
-    ),
-    <a:Attr<AddEqual>> => Stmt::Attr(a.0, a.1),
-    <a:Attr<SubEqual>> => Stmt::Attr(a.0, a.1),
-    <a:Attr<MulEqual>> => Stmt::Attr(a.0, a.1),
-    <a:Attr<DivEqual>> => Stmt::Attr(a.0, a.1),
-    <a:Attr<ModEqual>> => Stmt::Attr(a.0, a.1),
+    },
+    <a:Attr<AddEqual>> => Stmt::Attr(a.0, a.1, a.2),
+    <a:Attr<SubEqual>> => Stmt::Attr(a.0, a.1, a.2),
+    <a:Attr<MulEqual>> => Stmt::Attr(a.0, a.1, a.2),
+    <a:Attr<DivEqual>> => Stmt::Attr(a.0, a.1, a.2),
+    <a:Attr<ModEqual>> => Stmt::Attr(a.0, a.1, a.2),
 };
 
 Stmt: Stmt = {
     <AllAttr> SEMICOLON => <>,
 
-    SKIP SEMICOLON => Stmt::Skip,
-    STOP SEMICOLON => Stmt::Stop,
-    RETURN <Expr?> SEMICOLON => Stmt::Return(<>),
+    <l:@L> SKIP <r:@R> SEMICOLON => {
+        let location = Span::new(ByteIndex(l as u32), ByteIndex(r as u32));
 
-    READ <v:Var> SEMICOLON => Stmt::Read(<>),
-    WRITE <Comma<Expr>> SEMICOLON => Stmt::Write(<>),
+        Stmt::Skip(location)
+    },
+    <l:@L> STOP <r:@R> SEMICOLON => {
+        let location = Span::new(ByteIndex(l as u32), ByteIndex(r as u32));
 
-    // FIXME Function call is an expression not an statement
-    <Id> OPEN_PARENS <Comma<Expr>?> CLOSE_PARENS SEMICOLON => Stmt::Call(<>),
+        Stmt::Stop(location)
+    },
+    <l:@L> RETURN <e:Expr?> <r:@R> SEMICOLON => {
+        let location = Span::new(ByteIndex(l as u32), ByteIndex(r as u32));
 
-    IF OPEN_PARENS <Expr> CLOSE_PARENS <Block> <(ELSE IF OPEN_PARENS <Expr> CLOSE_PARENS <Block>)*> <(ELSE <Block>)?> => Stmt::If(<>),
+        Stmt::Return(e, location)
+    },
+    <l:@L> READ <v:Var> <r:@R> SEMICOLON => {
+        let location = Span::new(ByteIndex(l as u32), ByteIndex(r as u32));
 
-    WHILE OPEN_PARENS <Expr> CLOSE_PARENS <Block> => Stmt::While(<>),
-    // TODO If for does not accpet an a empty initialization or step recovery from error and print to user
-    FOR OPEN_PARENS <i:AllAttr> SEMICOLON <e:Expr> SEMICOLON <s:AllAttr> CLOSE_PARENS <b:Block> => Stmt::For(Box::new(i), e, Box::new(s), b),
+        Stmt::Read(v, location)
+    },
+    <l:@L> WRITE <e:Comma<Expr>> <r:@R> SEMICOLON => {
+        let location = Span::new(ByteIndex(l as u32), ByteIndex(r as u32));
+
+        Stmt::Write(e, location)
+    },
+    <l:@L> <i:Id> OPEN_PARENS <e:Comma<Expr>?> CLOSE_PARENS <r:@R> SEMICOLON => {
+        let location = Span::new(ByteIndex(l as u32), ByteIndex(r as u32));
+
+        Stmt::Call(i, e, location)
+    },
+    <l:@L> IF OPEN_PARENS <e:Expr> CLOSE_PARENS <r:@R> <b:Block> <elifs:(ELSE IF OPEN_PARENS <Expr> CLOSE_PARENS <Block>)*> <e_block:(ELSE <Block>)?> => {
+        let location = Span::new(ByteIndex(l as u32), ByteIndex(r as u32));
+
+        Stmt::If(e, b, elifs, e_block, location)
+    },
+    <l:@L> WHILE OPEN_PARENS <e:Expr> CLOSE_PARENS <r:@R> <b:Block> => {
+        let location = Span::new(ByteIndex(l as u32), ByteIndex(r as u32));
+
+        Stmt::While(e, b, location)
+    },
+    <l:@L> FOR OPEN_PARENS <i:AllAttr> SEMICOLON <e:Expr> SEMICOLON <s:AllAttr> CLOSE_PARENS <r:@R> <b:Block> => {
+        let location = Span::new(ByteIndex(l as u32), ByteIndex(r as u32));
+
+        Stmt::For(Box::new(i), e, Box::new(s), b, location)
+    }
 };
 
 Commands: Either<Stmt, Block> = {

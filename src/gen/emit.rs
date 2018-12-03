@@ -3,14 +3,17 @@ use llvm::{core::*, *};
 use std::ffi::CString;
 
 pub trait Emit<T> {
-    unsafe fn emit(self: &Self, context: &mut Context) -> Result<T, String>;
+    unsafe fn emit(
+        self: &Self,
+        context: &mut Context,
+    ) -> Result<T, (String, Location)>;
 }
 
 impl Emit<*mut LLVMType> for Type {
     unsafe fn emit(
         self: &Self,
         context: &mut Context,
-    ) -> Result<*mut LLVMType, String> {
+    ) -> Result<*mut LLVMType, (String, Location)> {
         match self {
             Type::Int => Ok(LLVMInt64TypeInContext(context.context)),
             Type::Bool => Ok(LLVMInt1TypeInContext(context.context)),
@@ -25,25 +28,25 @@ impl Emit<(*mut LLVMValue, Type)> for Variable {
     unsafe fn emit(
         self: &Self,
         context: &mut Context,
-    ) -> Result<(*mut LLVMValue, Type), String> {
+    ) -> Result<(*mut LLVMValue, Type), (String, Location)> {
         let builder = context.builder;
         match self {
-            Variable::Single(identifier) => {
+            Variable::Single(identifier, location) => {
                 if let Ok(value) = context.symbol_table.get(identifier) {
                     match value {
                         Symbol::Variable(value, type_of) => {
                             Ok((*value, type_of.clone()))
                         }
-                        _ => Err(format!(
-                            "Variable {} type mismatch",
-                            identifier
+                        _ => Err((
+                            format!("Variable {} type mismatch", identifier),
+                            *location,
                         )),
                     }
                 } else {
-                    Err("variabe not declared".to_string())
+                    Err(("variabe not declared".to_string(), *location))
                 }
             }
-            Variable::Array(identifier, expression) => {
+            Variable::Array(identifier, expression, location) => {
                 if let Ok(value) = context.clone().symbol_table.get(identifier)
                 {
                     let (index, type_of_index) =
@@ -60,13 +63,13 @@ impl Emit<(*mut LLVMValue, Type)> for Variable {
                             ),
                             type_of.clone(),
                         )),
-                        _ => Err(format!(
-                            "Variable {} type mismatch",
-                            identifier
+                        _ => Err((
+                            format!("Variable {} type mismatch", identifier),
+                            *location,
                         )),
                     }
                 } else {
-                    Err("Variable not defined".to_string())
+                    Err(("Variable not defined".to_string(), *location))
                 }
             }
         }
@@ -77,21 +80,21 @@ impl Emit<(*mut LLVMValue, Type)> for Expr {
     unsafe fn emit(
         self: &Self,
         context: &mut Context,
-    ) -> Result<(*mut LLVMValue, Type), String> {
+    ) -> Result<(*mut LLVMValue, Type), (String, Location)> {
         match self {
-            Expr::Number(number) => Ok((
+            Expr::Number(number, location) => Ok((
                 LLVMConstInt(Type::Int.emit(context).unwrap(), *number, 1),
                 Type::Int,
             )),
-            Expr::True => Ok((
+            Expr::True(location) => Ok((
                 LLVMConstInt(Type::Bool.emit(context).unwrap(), 1, 1),
                 Type::Bool,
             )),
-            Expr::False => Ok((
+            Expr::False(location) => Ok((
                 LLVMConstInt(Type::Bool.emit(context).unwrap(), 0, 1),
                 Type::Bool,
             )),
-            Expr::Variable(var) => {
+            Expr::Variable(var, location) => {
                 let (ptr_var, type_of) = var.emit(context).unwrap();
 
                 Ok((
@@ -103,7 +106,7 @@ impl Emit<(*mut LLVMValue, Type)> for Expr {
                     type_of,
                 ))
             }
-            Expr::Call(identifier, params) => {
+            Expr::Call(identifier, params, location) => {
                 let builder = context.builder;
                 if let Ok(function) =
                     context.clone().symbol_table.get(identifier)
@@ -135,13 +138,13 @@ impl Emit<(*mut LLVMValue, Type)> for Expr {
                                 function_signature.0,
                             ))
                         }
-                        _ => Err("Type mismatch".to_string()),
+                        _ => Err(("Type mismatch".to_string(), *location)),
                     }
                 } else {
-                    Err("Identifier not declared".to_string())
+                    Err(("Identifier not declared".to_string(), *location))
                 }
             }
-            Expr::Op(lhs, op, rhs) => {
+            Expr::Op(lhs, op, rhs, location) => {
                 let builder = context.builder;
                 let (lhs, type_of_lhs) = lhs.emit(context).unwrap();
                 let (rhs, type_of_rhs) = rhs.emit(context).unwrap();
@@ -175,7 +178,7 @@ impl Emit<(*mut LLVMValue, Type)> for Expr {
                 };
                 Ok((value, Type::Int)) // FIXME type_of depend on the operand
             }
-            Expr::Right(op, expression) => {
+            Expr::Right(op, expression, location) => {
                 let builder = context.builder;
                 let (expression, type_of) = expression.emit(context).unwrap();
                 let value = match op {
@@ -191,16 +194,21 @@ impl Emit<(*mut LLVMValue, Type)> for Expr {
                 };
                 Ok((value, Type::Int)) // FIXME type_of depend on the operand
             }
-            Expr::Ternary(_, _, _) => panic!("Not implemented yet"),
+            Expr::Ternary(_predicate, _then, _else, _location) => {
+                panic!("Not implemented yet")
+            }
         }
     }
 }
 
 impl Emit<()> for Stmt {
-    unsafe fn emit(self: &Self, context: &mut Context) -> Result<(), String> {
+    unsafe fn emit(
+        self: &Self,
+        context: &mut Context,
+    ) -> Result<(), (String, Location)> {
         let builder = context.builder;
         match self {
-            Stmt::Attr(var, expression) => {
+            Stmt::Attr(var, expression, location) => {
                 let (ptr_var, type_of) = var.emit(context).unwrap();
                 let (expression, type_of_expression) =
                     expression.emit(context).unwrap();
@@ -208,13 +216,17 @@ impl Emit<()> for Stmt {
                 LLVMBuildStore(builder, expression, ptr_var);
                 Ok(())
             }
-            Stmt::Call(identifier, expressions) => {
-                Expr::Call(identifier.to_string(), expressions.clone())
-                    .emit(context)
-                    .unwrap();
+            Stmt::Call(identifier, expressions, location) => {
+                Expr::Call(
+                    identifier.to_string(),
+                    expressions.clone(),
+                    *location,
+                )
+                .emit(context)
+                .unwrap();
                 Ok(())
             }
-            Stmt::For(init, predicate, step, block) => {
+            Stmt::For(init, predicate, step, block, location) => {
                 init.emit(context).unwrap();
                 let block_predicate = LLVMAppendBasicBlockInContext(
                     context.context,
@@ -261,7 +273,7 @@ impl Emit<()> for Stmt {
 
                 Ok(())
             }
-            Stmt::While(predicate, block) => {
+            Stmt::While(predicate, block, location) => {
                 let block_predicate = LLVMAppendBasicBlockInContext(
                     context.context,
                     context.actual_function.unwrap().0,
@@ -299,23 +311,23 @@ impl Emit<()> for Stmt {
 
                 Ok(())
             }
-            Stmt::Stop => {
+            Stmt::Stop(location) => {
                 if let Some((merge, _)) = context.actual_loop {
                     LLVMBuildBr(context.builder, merge);
                     Ok(())
                 } else {
-                    Err("Stop not in a loop".to_string())
+                    Err(("Stop not in a loop".to_string(), *location))
                 }
             }
-            Stmt::Skip => {
+            Stmt::Skip(location) => {
                 if let Some((_, predicate)) = context.actual_loop {
                     LLVMBuildBr(context.builder, predicate);
                     Ok(())
                 } else {
-                    Err("Skip not in a loop".to_string())
+                    Err(("Skip not in a loop".to_string(), *location))
                 }
             }
-            Stmt::Return(expression) => {
+            Stmt::Return(expression, location) => {
                 if let Some(expression) = expression {
                     let (expression, type_of) =
                         expression.emit(context).unwrap();
@@ -326,7 +338,7 @@ impl Emit<()> for Stmt {
                     Ok(())
                 }
             }
-            Stmt::If(expression, block, elifs, else_block) => {
+            Stmt::If(expression, block, elifs, else_block, location) => {
                 let block_if_predicate = LLVMAppendBasicBlockInContext(
                     context.context,
                     context.actual_function.unwrap().0,
@@ -421,7 +433,10 @@ impl Emit<()> for Stmt {
 }
 
 impl Emit<()> for Decl {
-    unsafe fn emit(self: &Self, context: &mut Context) -> Result<(), String> {
+    unsafe fn emit(
+        self: &Self,
+        context: &mut Context,
+    ) -> Result<(), (String, Location)> {
         if context.actual_function.is_some() {
             // When local
             let alloc_builder = LLVMCreateBuilderInContext(context.context);
@@ -438,7 +453,7 @@ impl Emit<()> for Decl {
 
             let builder = context.builder;
             match self {
-                Decl::Single(identifier, type_of, expression) => {
+                Decl::Single(identifier, type_of, expression, location) => {
                     let ptr_vlr = LLVMBuildAlloca(
                         alloc_builder,
                         type_of.emit(context).unwrap(),
@@ -458,9 +473,15 @@ impl Emit<()> for Decl {
                         Ok(())
                     }
                 }
-                Decl::Array(identifier, type_of, size, list_expression) => {
+                Decl::Array(
+                    identifier,
+                    type_of,
+                    size,
+                    list_expression,
+                    location,
+                ) => {
                     let (expression_size, _) =
-                        Expr::Number(*size).emit(context).unwrap();
+                        Expr::Number(*size, *location).emit(context).unwrap();
 
                     let ptr_vlr = LLVMBuildArrayAlloca(
                         context.builder,
@@ -477,12 +498,12 @@ impl Emit<()> for Decl {
 
                     Ok(())
                 }
-                _ => Err("Function not expected".to_string()),
+                _ => panic!("Function not expected".to_string()),
             }
         } else {
             // When global
             match self {
-                Decl::Single(identifier, type_of, expression) => {
+                Decl::Single(identifier, type_of, expression, location) => {
                     let decl = LLVMAddGlobal(
                         context.module,
                         type_of.emit(context).unwrap(),
@@ -502,12 +523,17 @@ impl Emit<()> for Decl {
                             expression.emit(context).unwrap();
 
                         LLVMSetInitializer(decl, value);
-                        Ok(())
-                    } else {
-                        Ok(())
                     }
+
+                    Ok(())
                 }
-                Decl::Array(identifier, type_of, size, list_expression) => {
+                Decl::Array(
+                    identifier,
+                    type_of,
+                    size,
+                    list_expression,
+                    location,
+                ) => {
                     let array_type = LLVMArrayType(
                         type_of.emit(context).unwrap(),
                         *size as u32,
@@ -528,16 +554,22 @@ impl Emit<()> for Decl {
 
                     Ok(())
                 }
-                Decl::Func(identifier, return_type, vec_params, block) => {
+                Decl::Func(
+                    identifier,
+                    return_type,
+                    vec_params,
+                    block,
+                    location,
+                ) => {
                     let vec_params = vec_params.clone().unwrap_or_default();
 
                     let mut args = vec_params
                         .iter()
                         .map(|param| match param {
-                            FuncParam::Single(_, type_of) => {
+                            FuncParam::Single(_, type_of, _) => {
                                 type_of.emit(context).unwrap()
                             }
-                            FuncParam::Array(_, type_of) => {
+                            FuncParam::Array(_, type_of, _) => {
                                 type_of.emit(context).unwrap()
                             }
                         })
@@ -570,10 +602,12 @@ impl Emit<()> for Decl {
                                     vec_params
                                         .iter()
                                         .map(|param| match param {
-                                            FuncParam::Single(_, type_of) => {
-                                                type_of.clone()
-                                            }
-                                            FuncParam::Array(_, type_of) => {
+                                            FuncParam::Single(
+                                                _,
+                                                type_of,
+                                                _,
+                                            ) => type_of.clone(),
+                                            FuncParam::Array(_, type_of, _) => {
                                                 Type::Agg(Box::new(
                                                     type_of.clone(),
                                                 ))
@@ -601,7 +635,7 @@ impl Emit<()> for Decl {
                             LLVMGetParam(function, index as u32);
 
                         match param {
-                            FuncParam::Single(identifier, type_of) => {
+                            FuncParam::Single(identifier, type_of, location) => {
                                 let ptr_vlr = LLVMBuildAlloca(
                                     context.builder,
                                     type_of.emit(context).unwrap(),
@@ -609,7 +643,7 @@ impl Emit<()> for Decl {
                                 );
                                 context
                                     .symbol_table
-                                    .set(identifier, Symbol::Variable(ptr_vlr, type_of.clone()))
+                                    .set(&identifier, Symbol::Variable(ptr_vlr, type_of.clone()))
                                     .expect("Can't set the variable, probably the variable is already declared");
 
                                 LLVMBuildStore(
@@ -618,7 +652,7 @@ impl Emit<()> for Decl {
                                     ptr_vlr,
                                 );
                             }
-                            FuncParam::Array(_identifier, _type_of) => {
+                            FuncParam::Array(_identifier, _type_of, location) => {
                                 panic!("Not implemented yet")
                             }
                         }
@@ -636,7 +670,10 @@ impl Emit<()> for Decl {
 }
 
 impl Emit<()> for Block {
-    unsafe fn emit(self: &Self, context: &mut Context) -> Result<(), String> {
+    unsafe fn emit(
+        self: &Self,
+        context: &mut Context,
+    ) -> Result<(), (String, Location)> {
         context.symbol_table.initialize_scope();
         self.decl
             .iter()
@@ -652,7 +689,10 @@ impl Emit<()> for Block {
 }
 
 impl Emit<()> for Either<Stmt, Block> {
-    unsafe fn emit(self: &Self, context: &mut Context) -> Result<(), String> {
+    unsafe fn emit(
+        self: &Self,
+        context: &mut Context,
+    ) -> Result<(), (String, Location)> {
         match self {
             Either::Left(stmt) => stmt.emit(context).unwrap(),
             Either::Right(block) => block.emit(context).unwrap(),
