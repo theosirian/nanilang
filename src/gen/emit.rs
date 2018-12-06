@@ -2,18 +2,20 @@ use super::{super::ast::*, context::*, symbol_table::*};
 use llvm::{core::*, *};
 use std::ffi::CString;
 
+pub type SemanticError = (String, Location);
+
 pub trait Emit<T> {
     unsafe fn emit(
         self: &Self,
         context: &mut Context,
-    ) -> Result<T, (String, Location)>;
+    ) -> Result<T, SemanticError>;
 }
 
 impl Emit<*mut LLVMType> for Type {
     unsafe fn emit(
         self: &Self,
         context: &mut Context,
-    ) -> Result<*mut LLVMType, (String, Location)> {
+    ) -> Result<*mut LLVMType, SemanticError> {
         match self {
             Type::Int => Ok(LLVMInt64TypeInContext(context.context)),
             Type::Bool => Ok(LLVMInt1TypeInContext(context.context)),
@@ -28,7 +30,7 @@ impl Emit<(*mut LLVMValue, Type)> for Variable {
     unsafe fn emit(
         self: &Self,
         context: &mut Context,
-    ) -> Result<(*mut LLVMValue, Type), (String, Location)> {
+    ) -> Result<(*mut LLVMValue, Type), SemanticError> {
         let builder = context.builder;
         match self {
             Variable::Single(identifier, location) => {
@@ -49,8 +51,7 @@ impl Emit<(*mut LLVMValue, Type)> for Variable {
             Variable::Array(identifier, expression, location) => {
                 if let Ok(value) = context.clone().symbol_table.get(identifier)
                 {
-                    let (index, type_of_index) =
-                        expression.emit(context).unwrap();
+                    let (index, type_of_index) = expression.emit(context)?;
 
                     match value {
                         Symbol::Array(value, type_of) => Ok((
@@ -83,19 +84,17 @@ impl Emit<(*mut LLVMValue, Type)> for Expr {
     ) -> Result<(*mut LLVMValue, Type), (String, Location)> {
         match self {
             Expr::Number(number, location) => Ok((
-                LLVMConstInt(Type::Int.emit(context).unwrap(), *number, 1),
+                LLVMConstInt(Type::Int.emit(context)?, *number, 1),
                 Type::Int,
             )),
-            Expr::True(location) => Ok((
-                LLVMConstInt(Type::Bool.emit(context).unwrap(), 1, 1),
-                Type::Bool,
-            )),
-            Expr::False(location) => Ok((
-                LLVMConstInt(Type::Bool.emit(context).unwrap(), 0, 1),
-                Type::Bool,
-            )),
+            Expr::True(location) => {
+                Ok((LLVMConstInt(Type::Bool.emit(context)?, 1, 1), Type::Bool))
+            }
+            Expr::False(location) => {
+                Ok((LLVMConstInt(Type::Bool.emit(context)?, 0, 1), Type::Bool))
+            }
             Expr::Variable(var, location) => {
-                let (ptr_var, type_of) = var.emit(context).unwrap();
+                let (ptr_var, type_of) = var.emit(context)?;
 
                 Ok((
                     LLVMBuildLoad(
@@ -125,12 +124,12 @@ impl Emit<(*mut LLVMValue, Type)> for Expr {
                                         .iter()
                                         .zip(function_signature.1)
                                         .map(|(param, param_expected_type)| {
-                                            let (value, type_of) =
-                                                param.emit(context).unwrap();
-                                            // TODO Check type_of with function_signature
-                                            value
+                                            match param.emit(context) {
+                                                Ok((value, type_of)) => Ok(value),
+                                                Err(e) => Err(e),
+                                            }
                                         })
-                                        .collect::<Vec<*mut LLVMValue>>()
+                                        .collect::<Result<Vec<*mut LLVMValue>, _>>()?
                                         .as_mut_ptr(),
                                     params.len() as u32,
                                     as_str!("call"),
@@ -146,8 +145,8 @@ impl Emit<(*mut LLVMValue, Type)> for Expr {
             }
             Expr::Op(lhs, op, rhs, location) => {
                 let builder = context.builder;
-                let (lhs, type_of_lhs) = lhs.emit(context).unwrap();
-                let (rhs, type_of_rhs) = rhs.emit(context).unwrap();
+                let (lhs, type_of_lhs) = lhs.emit(context)?;
+                let (rhs, type_of_rhs) = rhs.emit(context)?;
                 let value = match op {
                     Opcode::Add => {
                         LLVMBuildAdd(builder, lhs, rhs, as_str!("add_result"))
@@ -180,7 +179,7 @@ impl Emit<(*mut LLVMValue, Type)> for Expr {
             }
             Expr::Right(op, expression, location) => {
                 let builder = context.builder;
-                let (expression, type_of) = expression.emit(context).unwrap();
+                let (expression, type_of) = expression.emit(context)?;
                 let value = match op {
                     Opcode::Not => {
                         LLVMBuildNot(builder, expression, as_str!("not_result"))
@@ -209,9 +208,9 @@ impl Emit<()> for Stmt {
         let builder = context.builder;
         match self {
             Stmt::Attr(var, expression, location) => {
-                let (ptr_var, type_of) = var.emit(context).unwrap();
+                let (ptr_var, type_of) = var.emit(context)?;
                 let (expression, type_of_expression) =
-                    expression.emit(context).unwrap();
+                    expression.emit(context)?;
 
                 LLVMBuildStore(builder, expression, ptr_var);
                 Ok(())
@@ -222,12 +221,11 @@ impl Emit<()> for Stmt {
                     expressions.clone(),
                     *location,
                 )
-                .emit(context)
-                .unwrap();
+                .emit(context)?;
                 Ok(())
             }
             Stmt::For(init, predicate, step, block, location) => {
-                init.emit(context).unwrap();
+                init.emit(context)?;
                 let block_predicate = LLVMAppendBasicBlockInContext(
                     context.context,
                     context.actual_function.unwrap().0,
@@ -424,6 +422,45 @@ impl Emit<()> for Stmt {
                 block.emit(context).unwrap();
                 LLVMBuildBr(context.builder, block_merge);
                 LLVMPositionBuilderAtEnd(context.builder, block_merge);
+
+                Ok(())
+            }
+            Stmt::Write(list_expr, location) => {
+                let printf_fn =
+                    match context.symbol_table.get("0printf").unwrap() {
+                        Symbol::Func(value, _type_of) => value,
+                        _ => panic!("What"),
+                    };
+
+                let format_str = LLVMBuildGlobalStringPtr(
+                    context.builder,
+                    as_str!("%s"),
+                    as_str!("format_str"),
+                );
+
+                let format_int = LLVMBuildGlobalStringPtr(
+                    context.builder,
+                    as_str!("%d"),
+                    as_str!("format_int"),
+                );
+
+                list_expr.iter().for_each(|expr| {
+                    let (value, type_of) =
+                        expr.emit(&mut context.clone()).unwrap();
+
+                    match type_of {
+                        Type::Int => {
+                            LLVMBuildCall(
+                                context.builder,
+                                *printf_fn,
+                                vec![format_int, value].as_mut_ptr(),
+                                2,
+                                as_str!("call_write"),
+                            );
+                        }
+                        _ => panic!("Not implemented"),
+                    }
+                });
 
                 Ok(())
             }
@@ -662,6 +699,7 @@ impl Emit<()> for Decl {
 
                     context.symbol_table.kill_scope();
 
+                    context.actual_function = None;
                     Ok(())
                 }
             }

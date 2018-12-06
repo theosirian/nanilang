@@ -877,6 +877,7 @@ mod symbol_table;
 
 pub unsafe fn gen(decls: Vec<Decl>) {
     let mut context = context::Context::new();
+    context.declare_printf_scanf();
     for i in decls {
         i.emit(&mut context).expect("Cannot emit this");
     }
