@@ -8,6 +8,7 @@ use llvm::prelude::*;
 pub enum Symbol {
     Variable(LLVMValueRef, Type),
     Array(LLVMValueRef, Type),
+    JumpBlock(LLVMBasicBlockRef),
     Func(LLVMValueRef, (Type, Vec<Type>)), // TODO Should store tha function value and signature
 }
 

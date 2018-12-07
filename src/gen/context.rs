@@ -12,7 +12,6 @@ pub struct Context {
     pub context: *mut LLVMContext,
     pub builder: *mut LLVMBuilder,
     pub actual_function: Option<(*mut LLVMValue, *mut LLVMBasicBlock)>, // (function, entry)
-    pub actual_loop: Option<(*mut LLVMBasicBlock, *mut LLVMBasicBlock)>, // (merge, predicate)
 }
 
 impl Context {
@@ -25,22 +24,10 @@ impl Context {
             context,
             actual_function: None,
             builder: LLVMCreateBuilderInContext(context),
-            actual_loop: None,
         }
     }
 
     pub unsafe fn declare_printf_scanf(self: &mut Self) {
-        let format_int = LLVMConstString(as_str!("%d"), 3, 1);
-        let format_str = LLVMConstString(as_str!("%s"), 3, 1);
-
-        self.symbol_table
-            .set("0format_int", Symbol::Variable(format_int, Type::Str))
-            .unwrap();
-
-        self.symbol_table
-            .set("0format_str", Symbol::Variable(format_str, Type::Str))
-            .unwrap();
-
         let int8_type = LLVMInt8TypeInContext(self.context);
         let int32_type = LLVMInt32TypeInContext(self.context);
         let mut args = [LLVMPointerType(int8_type, 0)];

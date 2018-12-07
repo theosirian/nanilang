@@ -254,7 +254,16 @@ impl Emit<()> for Stmt {
                     context.actual_function.unwrap().0,
                     as_str!("merge_for"),
                 );
-                context.actual_loop = Some((block_merge, block_step));
+
+                context.symbol_table.initialize_scope();
+                context
+                    .symbol_table
+                    .set("0loop_merge", Symbol::JumpBlock(block_merge))
+                    .unwrap();
+                context
+                    .symbol_table
+                    .set("0loop_step", Symbol::JumpBlock(block_step))
+                    .unwrap();
 
                 LLVMBuildBr(context.builder, block_predicate);
 
@@ -274,6 +283,7 @@ impl Emit<()> for Stmt {
                 LLVMPositionBuilderAtEnd(context.builder, block_step);
                 step.emit(context).unwrap();
                 LLVMBuildBr(context.builder, block_predicate);
+                context.symbol_table.kill_scope();
 
                 LLVMPositionBuilderAtEnd(context.builder, block_merge);
 
@@ -295,7 +305,16 @@ impl Emit<()> for Stmt {
                     context.actual_function.unwrap().0,
                     as_str!("merge_for"),
                 );
-                context.actual_loop = Some((block_merge, block_predicate));
+
+                context.symbol_table.initialize_scope();
+                context
+                    .symbol_table
+                    .set("0loop_merge", Symbol::JumpBlock(block_merge))
+                    .unwrap();
+                context
+                    .symbol_table
+                    .set("0loop_step", Symbol::JumpBlock(block_predicate))
+                    .unwrap();
 
                 LLVMBuildBr(context.builder, block_predicate);
 
@@ -312,23 +331,32 @@ impl Emit<()> for Stmt {
                 LLVMPositionBuilderAtEnd(context.builder, block_while);
                 block.emit(context).unwrap();
                 LLVMBuildBr(context.builder, block_predicate);
+                context.symbol_table.kill_scope();
 
                 LLVMPositionBuilderAtEnd(context.builder, block_merge);
 
                 Ok(())
             }
             Stmt::Stop(location) => {
-                if let Some((merge, _)) = context.actual_loop {
-                    LLVMBuildBr(context.builder, merge);
-                    Ok(())
+                if let Ok(merge) = context.symbol_table.get("0loop_merge") {
+                    if let Symbol::JumpBlock(merge) = merge {
+                        LLVMBuildBr(context.builder, *merge);
+                        Ok(())
+                    } else {
+                        Err(("Impossibru!!".to_string(), *location))
+                    }
                 } else {
                     Err(("Stop not in a loop".to_string(), *location))
                 }
             }
             Stmt::Skip(location) => {
-                if let Some((_, predicate)) = context.actual_loop {
-                    LLVMBuildBr(context.builder, predicate);
-                    Ok(())
+                if let Ok(predicate) = context.symbol_table.get("0loop_step") {
+                    if let Symbol::JumpBlock(predicate) = predicate {
+                        LLVMBuildBr(context.builder, *predicate);
+                        Ok(())
+                    } else {
+                        Err(("Impossibru!!".to_string(), *location))
+                    }
                 } else {
                     Err(("Skip not in a loop".to_string(), *location))
                 }
@@ -372,7 +400,9 @@ impl Emit<()> for Stmt {
                             context.builder,
                             block_if_else,
                         );
+                        context.symbol_table.initialize_scope();
                         else_block.emit(context).unwrap();
+                        context.symbol_table.kill_scope();
                         LLVMBuildBr(context.builder, block_merge);
 
                         block_if_else
@@ -410,7 +440,9 @@ impl Emit<()> for Stmt {
                             context.builder,
                             block_elif_then,
                         );
+                        context.symbol_table.initialize_scope();
                         actual_block.1.emit(context).unwrap();
+                        context.symbol_table.kill_scope();
                         LLVMBuildBr(context.builder, block_merge);
 
                         block_elif_predicate
@@ -427,7 +459,9 @@ impl Emit<()> for Stmt {
                     block_else_to_jump,
                 );
                 LLVMPositionBuilderAtEnd(context.builder, block_if_then);
+                context.symbol_table.initialize_scope();
                 block.emit(context).unwrap();
+                context.symbol_table.kill_scope();
                 LLVMBuildBr(context.builder, block_merge);
                 LLVMPositionBuilderAtEnd(context.builder, block_merge);
 
@@ -758,7 +792,6 @@ impl Emit<()> for Block {
         self: &Self,
         context: &mut Context,
     ) -> Result<(), (String, Location)> {
-        context.symbol_table.initialize_scope();
         self.decl
             .iter()
             .for_each(|decl| decl.emit(context).unwrap());
@@ -766,7 +799,6 @@ impl Emit<()> for Block {
         self.commands
             .iter()
             .for_each(|command| command.emit(context).unwrap());
-        context.symbol_table.kill_scope();
 
         Ok(())
     }
