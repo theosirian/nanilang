@@ -104,14 +104,17 @@ impl Emit<(*mut LLVMValue, Type)> for Expr {
             Expr::Variable(var, location) => {
                 let (ptr_var, type_of) = var.emit(context)?;
 
-                Ok((
-                    LLVMBuildLoad(
-                        context.builder,
-                        ptr_var,
-                        as_str!("var_load"),
-                    ),
-                    type_of,
-                ))
+                match type_of {
+                    Type::Str => Ok((ptr_var, type_of)),
+                    _ => Ok((
+                        LLVMBuildLoad(
+                            context.builder,
+                            ptr_var,
+                            as_str!("var_load"),
+                        ),
+                        type_of,
+                    )),
+                }
             }
             Expr::Call(identifier, params, location) => {
                 let builder = context.builder;
@@ -555,38 +558,71 @@ impl Emit<()> for Decl {
             let builder = context.builder;
             match self {
                 Decl::Single(identifier, type_of, expression, location) => {
-                    if *type_of == Type::Str {
-                        if let Some(expression) = expression {
-                            let (string, _) = expression.emit(context)?;
-                            context
-                        .symbol_table
-                        .set(identifier, Symbol::Variable(string, type_of.clone()))
-                        .expect("Can't set the variable, probably the variable is already declared");
-                            Ok(())
-                        } else {
-                            Err((
-                                "String must be initialized".to_string(),
-                                *location,
-                            ))
-                        }
-                    } else {
-                        let ptr_vlr = LLVMBuildAlloca(
-                            alloc_builder,
-                            type_of.emit(context).unwrap(),
-                            as_str!(identifier),
-                        );
-                        context
-                        .symbol_table
-                        .set(identifier, Symbol::Variable(ptr_vlr, type_of.clone()))
-                        .expect("Can't set the variable, probably the variable is already declared");
+                    match type_of {
+                        Type::Str => {
+                            if let Some(expression) = expression {
+                                let (string, _) = expression.emit(context)?;
 
-                        if let Some(expression) = expression {
-                            let (expression, type_of_expression) =
-                                expression.emit(context).unwrap();
-                            LLVMBuildStore(builder, expression, ptr_vlr);
-                            Ok(())
-                        } else {
-                            Ok(())
+                                if context
+                                    .symbol_table
+                                    .set(
+                                        identifier,
+                                        Symbol::Variable(
+                                            string,
+                                            type_of.clone(),
+                                        ),
+                                    )
+                                    .is_err()
+                                {
+                                    return Err((
+                                        format!(
+                                            "Identifier {} already declared",
+                                            identifier
+                                        ),
+                                        *location,
+                                    ));
+                                }
+
+                                Ok(())
+                            } else {
+                                Err((
+                                    "String must be initialized".to_string(),
+                                    *location,
+                                ))
+                            }
+                        }
+                        _ => {
+                            let ptr_vlr = LLVMBuildAlloca(
+                                alloc_builder,
+                                type_of.emit(context).unwrap(),
+                                as_str!(identifier),
+                            );
+
+                            if context
+                                .symbol_table
+                                .set(
+                                    identifier,
+                                    Symbol::Variable(ptr_vlr, type_of.clone()),
+                                )
+                                .is_err()
+                            {
+                                return Err((
+                                    format!(
+                                        "Identifier {} already declared",
+                                        identifier
+                                    ),
+                                    *location,
+                                ));
+                            }
+
+                            if let Some(expression) = expression {
+                                let (expression, type_of_expression) =
+                                    expression.emit(context).unwrap();
+                                LLVMBuildStore(builder, expression, ptr_vlr);
+                                Ok(())
+                            } else {
+                                Ok(())
+                            }
                         }
                     }
                 }
