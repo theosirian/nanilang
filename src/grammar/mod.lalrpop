@@ -56,6 +56,7 @@ match {
 
 Num: u64 = r"[0-9]+" => u64::from_str(<>).unwrap();
 Id: String = r"[a-zA-Z_][a-zA-Z0-9_]*" => String::from(<>);
+String_Litteral: String = <s:r#""[^"]*""#> => s[1..s.len()-1].to_string();
 
 Var: Variable = {
     <l:@L> <i:Id> OPEN_BRACKET <e:Expr> CLOSE_BRACKET <r:@R> => {
@@ -115,6 +116,11 @@ Term: Box<Expr> = {
         let location = Span::new(ByteIndex(l as u32), ByteIndex(r as u32));
 
         Box::new(Expr::Number(n, location))
+    },
+    <l:@L> <s:String_Litteral> <r:@R> => {
+        let location = Span::new(ByteIndex(l as u32), ByteIndex(r as u32));
+
+        Box::new(Expr::StringLitteral(s, location))
     },
     <l:@L> <v:Var> <r:@R> => {
         let location = Span::new(ByteIndex(l as u32), ByteIndex(r as u32));

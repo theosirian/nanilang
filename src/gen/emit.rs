@@ -87,6 +87,14 @@ impl Emit<(*mut LLVMValue, Type)> for Expr {
                 LLVMConstInt(Type::Int.emit(context)?, *number, 1),
                 Type::Int,
             )),
+            Expr::StringLitteral(string, location) => Ok((
+                LLVMBuildGlobalStringPtr(
+                    context.builder,
+                    as_str!(string),
+                    as_str!("string"),
+                ),
+                Type::Str,
+            )),
             Expr::True(location) => {
                 Ok((LLVMConstInt(Type::Bool.emit(context)?, 1, 1), Type::Bool))
             }
@@ -444,6 +452,12 @@ impl Emit<()> for Stmt {
                     as_str!("format_int"),
                 );
 
+                let format_barra_n = LLVMBuildGlobalStringPtr(
+                    context.builder,
+                    as_str!("\n"),
+                    as_str!("barra_n"),
+                );
+
                 list_expr.iter().for_each(|expr| {
                     let (value, type_of) =
                         expr.emit(&mut context.clone()).unwrap();
@@ -458,9 +472,25 @@ impl Emit<()> for Stmt {
                                 as_str!("call_write"),
                             );
                         }
+                        Type::Str => {
+                            LLVMBuildCall(
+                                context.builder,
+                                *printf_fn,
+                                vec![format_str, value].as_mut_ptr(),
+                                2,
+                                as_str!("call_write"),
+                            );
+                        }
                         _ => panic!("Not implemented"),
                     }
                 });
+                LLVMBuildCall(
+                    context.builder,
+                    *printf_fn,
+                    vec![format_barra_n].as_mut_ptr(),
+                    1,
+                    as_str!("call_write"),
+                );
 
                 Ok(())
             }
@@ -491,23 +521,39 @@ impl Emit<()> for Decl {
             let builder = context.builder;
             match self {
                 Decl::Single(identifier, type_of, expression, location) => {
-                    let ptr_vlr = LLVMBuildAlloca(
-                        alloc_builder,
-                        type_of.emit(context).unwrap(),
-                        as_str!(identifier),
-                    );
-                    context
+                    if *type_of == Type::Str {
+                        if let Some(expression) = expression {
+                            let (string, _) = expression.emit(context)?;
+                            context
+                        .symbol_table
+                        .set(identifier, Symbol::Variable(string, type_of.clone()))
+                        .expect("Can't set the variable, probably the variable is already declared");
+                            Ok(())
+                        } else {
+                            Err((
+                                "String must be initialized".to_string(),
+                                *location,
+                            ))
+                        }
+                    } else {
+                        let ptr_vlr = LLVMBuildAlloca(
+                            alloc_builder,
+                            type_of.emit(context).unwrap(),
+                            as_str!(identifier),
+                        );
+                        context
                         .symbol_table
                         .set(identifier, Symbol::Variable(ptr_vlr, type_of.clone()))
                         .expect("Can't set the variable, probably the variable is already declared");
 
-                    if let Some(expression) = expression {
-                        let (expression, type_of_expression) =
-                            expression.emit(context).unwrap();
-                        LLVMBuildStore(builder, expression, ptr_vlr);
-                        Ok(())
-                    } else {
-                        Ok(())
+                        if let Some(expression) = expression {
+                            let (expression, type_of_expression) =
+                                expression.emit(context).unwrap();
+                            LLVMBuildStore(builder, expression, ptr_vlr);
+                            Ok(())
+                        } else {
+                            Ok(())
+                        }
                     }
                 }
                 Decl::Array(

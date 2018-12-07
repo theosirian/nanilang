@@ -29,6 +29,7 @@ fn get_tabs(f: &fmt::Formatter) -> (usize, String) {
 #[derive(Clone, PartialEq)]
 pub enum Expr {
     Number(u64, Location),
+    StringLitteral(String, Location),
     Variable(Variable, Location),
     True(Location),
     False(Location),
@@ -142,6 +143,7 @@ impl fmt::Debug for Expr {
         let (width, tabs) = get_tabs(f);
         match self {
             Expr::Number(i, _) => write!(f, "${:?}", i),
+            Expr::StringLitteral(s, _) => write!(f, "${:?}", s),
             Expr::Variable(v, _) => {
                 write!(f, "{tabs}{:width$?}", v, tabs = tabs, width = width + 1)
             }
