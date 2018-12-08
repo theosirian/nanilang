@@ -70,7 +70,10 @@ impl Emit<(*mut LLVMValue, Type)> for Variable {
                         )),
                     }
                 } else {
-                    Err(("Variable not defined".to_string(), *location))
+                    Err((
+                        format!("Variable {} not defined", identifier),
+                        *location,
+                    ))
                 }
             }
         }
@@ -136,7 +139,13 @@ impl Emit<(*mut LLVMValue, Type)> for Expr {
                                         .zip(function_signature.1)
                                         .map(|(param, param_expected_type)| {
                                             match param.emit(context) {
-                                                Ok((value, type_of)) => Ok(value),
+                                                Ok((value, type_of)) => {
+                                                    //if type_of == param_expected_type {
+                                                    //    Err(("Parametro diferente do esperado", *location))
+                                                    //}
+                                                    // else { Ok(value) },
+                                                    Ok(value)
+                                                }
                                                 Err(e) => Err(e),
                                             }
                                         })
@@ -158,17 +167,72 @@ impl Emit<(*mut LLVMValue, Type)> for Expr {
                 let builder = context.builder;
                 let (lhs, type_of_lhs) = lhs.emit(context)?;
                 let (rhs, type_of_rhs) = rhs.emit(context)?;
+                let mut type_of_result;
                 let value = match op {
                     Opcode::Add => {
+                        if type_of_lhs != Type::Int {
+                            return Err((
+                                "Lado esquerda da soma não é inteiro"
+                                    .to_string(),
+                                *location,
+                            ));
+                        }
+                        if type_of_rhs != Type::Int {
+                            return Err((
+                                "Lado direito da soma não é inteiro"
+                                    .to_string(),
+                                *location,
+                            ));
+                        }
+                        type_of_result = Type::Int;
                         LLVMBuildAdd(builder, lhs, rhs, as_str!("add_result"))
                     }
                     Opcode::Sub => {
+                        if type_of_lhs != Type::Int {
+                            return Err((
+                                "Lado esquerda da subtração não é inteiro"
+                                    .to_string(),
+                                *location,
+                            ));
+                        }
+                        if type_of_rhs != Type::Int {
+                            return Err((
+                                "Lado direito da subtração não é inteiro"
+                                    .to_string(),
+                                *location,
+                            ));
+                        }
+                        type_of_result = Type::Int;
                         LLVMBuildSub(builder, lhs, rhs, as_str!("sub_result"))
                     }
                     Opcode::Div => {
+                        if type_of_lhs != Type::Int {
+                            return Err((
+                                "Lado esquerda da divisão não é inteiro"
+                                    .to_string(),
+                                *location,
+                            ));
+                        }
+                        if type_of_rhs != Type::Int {
+                            return Err((
+                                "Lado direito da divisão não é inteiro"
+                                    .to_string(),
+                                *location,
+                            ));
+                        }
+                        type_of_result = Type::Int;
+
                         LLVMBuildUDiv(builder, lhs, rhs, as_str!("div_result"))
                     }
                     Opcode::Mul => {
+                        if type_of_lhs != Type::Int {
+                            return Err(("Lado esquerda da multiplicação não é inteiro".to_string(), *location));
+                        }
+                        if type_of_rhs != Type::Int {
+                            return Err(("Lado direito da multiplicação não é inteiro".to_string(), *location));
+                        }
+                        type_of_result = Type::Int;
+
                         LLVMBuildMul(builder, lhs, rhs, as_str!("mul_result"))
                     }
                     Opcode::Mod => panic!("Não encontrei a chamada do modulo"),
@@ -177,16 +241,33 @@ impl Emit<(*mut LLVMValue, Type)> for Expr {
                     | Opcode::Greater
                     | Opcode::GreaterOrEqual
                     | Opcode::Equal
-                    | Opcode::Different => LLVMBuildICmp(
-                        context.builder,
-                        op.pred(),
-                        lhs,
-                        rhs,
-                        as_str!("cmp"),
-                    ),
+                    | Opcode::Different => {
+                        if type_of_lhs != Type::Int {
+                            return Err((
+                                "Lado esquerda da comparação não é inteiro"
+                                    .to_string(),
+                                *location,
+                            ));
+                        }
+                        if type_of_rhs != Type::Int {
+                            return Err((
+                                "Lado direito da comparação não é inteiro"
+                                    .to_string(),
+                                *location,
+                            ));
+                        }
+                        type_of_result = Type::Bool;
+                        LLVMBuildICmp(
+                            context.builder,
+                            op.pred(),
+                            lhs,
+                            rhs,
+                            as_str!("cmp"),
+                        )
+                    }
                     _ => panic!("Not implemented"),
                 };
-                Ok((value, Type::Int)) // FIXME type_of depend on the operand
+                Ok((value, type_of_result)) // FIXME type_of depend on the operand
             }
             Expr::Right(op, expression, location) => {
                 let builder = context.builder;
@@ -222,6 +303,9 @@ impl Emit<()> for Stmt {
                 let (ptr_var, type_of) = var.emit(context)?;
                 let (expression, type_of_expression) =
                     expression.emit(context)?;
+                        if type_of_expression != type_of {
+                            return Err(("Atribuição inválida".to_string(), *location));
+                        }                        
 
                 LLVMBuildStore(builder, expression, ptr_var);
                 Ok(())
@@ -273,6 +357,9 @@ impl Emit<()> for Stmt {
                 LLVMPositionBuilderAtEnd(context.builder, block_predicate);
                 let (predicate, type_of_predicate) =
                     predicate.emit(context).unwrap();
+                        if type_of_predicate != Type::Bool {
+                            return Err(("Predicado não é booleano".to_string(), *location));
+                        }                        
                 LLVMBuildCondBr(
                     context.builder,
                     predicate,
@@ -321,8 +408,15 @@ impl Emit<()> for Stmt {
 
                 LLVMBuildBr(context.builder, block_predicate);
 
-                let (predicate, type_of_predicate) =
-                    predicate.emit(context).unwrap();
+                let (predicate, type_of_predicate) = predicate.emit(context)?;
+
+                if type_of_predicate != Type::Bool {
+                    return Err((
+                        "Predicado não é booleano".to_string(),
+                        *location,
+                    ));
+                }
+
                 LLVMPositionBuilderAtEnd(context.builder, block_predicate);
                 LLVMBuildCondBr(
                     context.builder,
@@ -453,8 +547,14 @@ impl Emit<()> for Stmt {
                 );
 
                 LLVMPositionBuilderAtEnd(context.builder, block_if_predicate);
-                let (cmp_expression, type_of) =
-                    expression.emit(context).unwrap();
+                let (cmp_expression, type_of) = expression.emit(context)?;
+                if type_of != Type::Bool {
+                    return Err((
+                        "Predicado não é booleano".to_string(),
+                        *location,
+                    ));
+                }
+
                 LLVMBuildCondBr(
                     context.builder,
                     cmp_expression,
@@ -811,7 +911,7 @@ impl Emit<()> for Decl {
                         }
                     });
 
-                    block.emit(context).unwrap();
+                    block.emit(context)?;
 
                     context.symbol_table.kill_scope();
 
@@ -828,13 +928,12 @@ impl Emit<()> for Block {
         self: &Self,
         context: &mut Context,
     ) -> Result<(), (String, Location)> {
-        self.decl
-            .iter()
-            .for_each(|decl| decl.emit(context).unwrap());
-
-        self.commands
-            .iter()
-            .for_each(|command| command.emit(context).unwrap());
+        for decl in self.decl.iter() {
+            decl.emit(context)?;
+        }
+        for command in self.commands.iter() {
+            command.emit(context)?;
+        }
 
         Ok(())
     }
@@ -846,8 +945,8 @@ impl Emit<()> for Either<Stmt, Block> {
         context: &mut Context,
     ) -> Result<(), (String, Location)> {
         match self {
-            Either::Left(stmt) => stmt.emit(context).unwrap(),
-            Either::Right(block) => block.emit(context).unwrap(),
+            Either::Left(stmt) => stmt.emit(context)?,
+            Either::Right(block) => block.emit(context)?,
         };
 
         Ok(())
