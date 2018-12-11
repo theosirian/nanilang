@@ -133,6 +133,13 @@ impl Emit<(*mut LLVMValue, Type)> for Expr {
                             let params = params.clone().unwrap_or_default();
                             let function_signature = function_signature.clone();
 
+                            let mut name = if function_signature.0 == Type::Void
+                            {
+                                "".to_string()
+                            } else {
+                                "call".to_string()
+                            };
+
                             Ok((
                                 LLVMBuildCall(
                                     builder,
@@ -155,7 +162,7 @@ impl Emit<(*mut LLVMValue, Type)> for Expr {
                                         .collect::<Result<Vec<*mut LLVMValue>, _>>()?
                                         .as_mut_ptr(),
                                     params.len() as u32,
-                                    as_str!("call"),
+                                    as_str!(name),
                                 ),
                                 function_signature.0,
                             ))
