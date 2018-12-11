@@ -1,0 +1,11 @@
+def main(): int {
+  var a = 1, b = 1, aux, i: int; 
+  write "fibonacci";
+  while (b <= 100){
+      write a;
+      aux = a;
+      a = b;
+      b = b + aux;
+  }
+  return 0;
+}

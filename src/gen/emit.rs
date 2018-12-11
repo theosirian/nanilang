@@ -348,8 +348,68 @@ impl Emit<(*mut LLVMValue, Type)> for Expr {
                     _ => Err(("Should not reach this".to_string(), *location)),
                 }
             }
-            Expr::Ternary(_predicate, _then, _else, _location) => {
-                panic!("Not implemented yet")
+            Expr::Ternary(predicate, truehs, falsehs, location) => {
+                let builder = context.builder;
+
+                let block_predicate = LLVMAppendBasicBlockInContext(
+                    context.context,
+                    context.current_function.unwrap().0,
+                    as_str!("ternary_predicate"),
+                );
+                LLVMBuildBr(context.builder, block_predicate);
+                let block_truehs = LLVMAppendBasicBlockInContext(
+                    context.context,
+                    context.current_function.unwrap().0,
+                    as_str!("ternary_truehs"),
+                );
+                let block_falsehs = LLVMAppendBasicBlockInContext(
+                    context.context,
+                    context.current_function.unwrap().0,
+                    as_str!("ternary_falsehs"),
+                );
+                let block_merge = LLVMAppendBasicBlockInContext(
+                    context.context,
+                    context.current_function.unwrap().0,
+                    as_str!("ternary_merge"),
+                );
+
+                LLVMPositionBuilderAtEnd(context.builder, block_predicate);
+                let (predicate, type_of_predicate) = predicate.emit(context)?;
+                if type_of_predicate != Type::Bool {
+                    return Err((
+                        "Predicado do ternário não é do tipo booleano"
+                            .to_string(),
+                        *location,
+                    ));
+                }
+                LLVMBuildCondBr(
+                    context.builder,
+                    predicate,
+                    block_truehs,
+                    block_falsehs,
+                );
+
+                LLVMPositionBuilderAtEnd(context.builder, block_truehs);
+                let (truehs, type_of_truehs) = truehs.emit(context)?;
+                LLVMBuildBr(context.builder, block_merge);
+
+                LLVMPositionBuilderAtEnd(context.builder, block_falsehs);
+                let (falsehs, type_of_falsehs) = falsehs.emit(context)?;
+                LLVMBuildBr(context.builder, block_merge);
+
+                if type_of_truehs != type_of_falsehs {
+                    return Err((
+                        "Caso positivo do ternario não é do mesmo tipo do caso negativo"
+                            .to_string(),
+                        *location,
+                    ));
+                }
+
+                LLVMPositionBuilderAtEnd(context.builder, block_merge);
+                let phi = LLVMBuildPhi(builder, type_of_truehs.emit(context)?, as_str!("phi_result"));
+                LLVMAddIncoming(phi, [truehs, falsehs].as_mut_ptr(), [block_truehs, block_falsehs].as_mut_ptr(), 2);
+
+                Ok((phi, type_of_truehs))
             }
         }
     }
@@ -389,22 +449,22 @@ impl Emit<()> for Stmt {
                 init.emit(context)?;
                 let block_predicate = LLVMAppendBasicBlockInContext(
                     context.context,
-                    context.actual_function.unwrap().0,
+                    context.current_function.unwrap().0,
                     as_str!("predicate_for"),
                 );
                 let block_for = LLVMAppendBasicBlockInContext(
                     context.context,
-                    context.actual_function.unwrap().0,
+                    context.current_function.unwrap().0,
                     as_str!("block_for"),
                 );
                 let block_step = LLVMAppendBasicBlockInContext(
                     context.context,
-                    context.actual_function.unwrap().0,
+                    context.current_function.unwrap().0,
                     as_str!("block_step"),
                 );
                 let block_merge = LLVMAppendBasicBlockInContext(
                     context.context,
-                    context.actual_function.unwrap().0,
+                    context.current_function.unwrap().0,
                     as_str!("merge_for"),
                 );
 
@@ -450,17 +510,17 @@ impl Emit<()> for Stmt {
             Stmt::While(predicate, block, location) => {
                 let block_predicate = LLVMAppendBasicBlockInContext(
                     context.context,
-                    context.actual_function.unwrap().0,
+                    context.current_function.unwrap().0,
                     as_str!("predicate_for"),
                 );
                 let block_while = LLVMAppendBasicBlockInContext(
                     context.context,
-                    context.actual_function.unwrap().0,
+                    context.current_function.unwrap().0,
                     as_str!("block_for"),
                 );
                 let block_merge = LLVMAppendBasicBlockInContext(
                     context.context,
-                    context.actual_function.unwrap().0,
+                    context.current_function.unwrap().0,
                     as_str!("merge_for"),
                 );
 
@@ -540,25 +600,25 @@ impl Emit<()> for Stmt {
             Stmt::If(expression, block, elifs, else_block, location) => {
                 let block_if_predicate = LLVMAppendBasicBlockInContext(
                     context.context,
-                    context.actual_function.unwrap().0,
+                    context.current_function.unwrap().0,
                     as_str!("if_predicate"),
                 );
                 LLVMBuildBr(context.builder, block_if_predicate);
                 let block_if_then = LLVMAppendBasicBlockInContext(
                     context.context,
-                    context.actual_function.unwrap().0,
+                    context.current_function.unwrap().0,
                     as_str!("if_then"),
                 );
                 let block_merge = LLVMAppendBasicBlockInContext(
                     context.context,
-                    context.actual_function.unwrap().0,
+                    context.current_function.unwrap().0,
                     as_str!("merge_if"),
                 );
                 let last_block = match else_block {
                     Some(else_block) => {
                         let block_if_else = LLVMAppendBasicBlockInContext(
                             context.context,
-                            context.actual_function.unwrap().0,
+                            context.current_function.unwrap().0,
                             as_str!("if_else"),
                         );
                         LLVMPositionBuilderAtEnd(
@@ -576,16 +636,16 @@ impl Emit<()> for Stmt {
                 };
                 let block_else_to_jump = elifs.iter().rev().try_fold(
                     last_block,
-                    |last_block, actual_block| {
+                    |last_block, current_block| {
                         let block_elif_predicate =
                             LLVMAppendBasicBlockInContext(
                                 context.context,
-                                context.actual_function.unwrap().0,
+                                context.current_function.unwrap().0,
                                 as_str!("block_elif"),
                             );
                         let block_elif_then = LLVMAppendBasicBlockInContext(
                             context.context,
-                            context.actual_function.unwrap().0,
+                            context.current_function.unwrap().0,
                             as_str!("block_elif"),
                         );
                         LLVMPositionBuilderAtEnd(
@@ -593,7 +653,7 @@ impl Emit<()> for Stmt {
                             block_elif_predicate,
                         );
                         let (elif_predicate, type_of_elif_predicate) =
-                            actual_block.0.emit(context)?;
+                            current_block.0.emit(context)?;
 
                         if type_of_elif_predicate != Type::Bool {
                             return Err((
@@ -613,7 +673,7 @@ impl Emit<()> for Stmt {
                             block_elif_then,
                         );
                         context.symbol_table.initialize_scope();
-                        actual_block.1.emit(context)?;
+                        current_block.1.emit(context)?;
                         context.symbol_table.kill_scope();
                         LLVMBuildBr(context.builder, block_merge);
 
@@ -758,17 +818,17 @@ impl Emit<()> for Decl {
         self: &Self,
         context: &mut Context,
     ) -> Result<(), (String, Location)> {
-        if context.actual_function.is_some() {
+        if context.current_function.is_some() {
             // When local
             let alloc_builder = LLVMCreateBuilderInContext(context.context);
             let first_intr =
-                LLVMGetFirstInstruction(context.actual_function.unwrap().1);
+                LLVMGetFirstInstruction(context.current_function.unwrap().1);
             if !first_intr.is_null() {
                 LLVMPositionBuilderBefore(alloc_builder, first_intr);
             } else {
                 LLVMPositionBuilderAtEnd(
                     alloc_builder,
-                    context.actual_function.unwrap().1,
+                    context.current_function.unwrap().1,
                 );
             }
 
@@ -1045,7 +1105,7 @@ impl Emit<()> for Decl {
 
                     context.symbol_table.initialize_scope();
 
-                    context.actual_function = Some((function, entry_block));
+                    context.current_function = Some((function, entry_block));
                     LLVMPositionBuilderAtEnd(context.builder, entry_block);
 
                     vec_params.iter().enumerate().for_each(|(index, param)| {
@@ -1115,7 +1175,7 @@ impl Emit<()> for Decl {
                         LLVMBuildRetVoid(context.builder);
                     }
 
-                    context.actual_function = None;
+                    context.current_function = None;
                     Ok(())
                 }
             }

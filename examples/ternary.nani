@@ -1,0 +1,12 @@
+def main(): int {
+  var a = false: bool;
+
+  var b = (a ? 1 : 2): int;
+  var c: int;
+  c = false ? 10 : 20;
+
+  write b;
+  write c;
+
+  return 0;
+}

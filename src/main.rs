@@ -118,7 +118,7 @@ fn main() {
                         .unwrap();
 
                     let diagnostic =
-                        Diagnostic::new_error("invalid line or EOF");
+                        Diagnostic::new_error("Token inválido");
                     let label = Label::new_primary(span);
 
                     emit(writer, &code_map, &diagnostic.with_label(label))
