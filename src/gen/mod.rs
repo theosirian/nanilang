@@ -4,7 +4,7 @@ use codespan_reporting::{
     termcolor::{ColorChoice, StandardStream},
     Diagnostic, Label,
 };
-use std::ffi::CString;
+use std::{ffi::CString, process::exit};
 
 #[macro_use]
 macro_rules! as_str {
@@ -26,14 +26,11 @@ pub unsafe fn gen(decls: Vec<Decl>, code_map: &CodeMap) {
     context.declare_printf_scanf();
     for i in decls {
         let writer = StandardStream::stderr(ColorChoice::Always);
-        match i.emit(&mut context) {
-            Err((msg, span)) => {
-                let diagnostic = Diagnostic::new_error(msg);
-                let label = Label::new_primary(span);
-                emit(writer, &code_map, &diagnostic.with_label(label));
-                panic!("Paro");
-            }
-            _ => {}
+        if let Err((msg, span)) = i.emit(&mut context) {
+            let diagnostic = Diagnostic::new_error(msg);
+            let label = Label::new_primary(span);
+            emit(writer, &code_map, &diagnostic.with_label(label)).unwrap();
+            exit(127);
         }
     }
     LLVMPrintModuleToFile(
