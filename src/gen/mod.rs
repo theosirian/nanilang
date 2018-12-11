@@ -1,3 +1,9 @@
+use codespan::CodeMap;
+use codespan_reporting::{
+    emit,
+    termcolor::{ColorChoice, StandardStream},
+    Diagnostic, Label,
+};
 use std::ffi::CString;
 
 #[macro_use]
@@ -15,11 +21,20 @@ mod context;
 mod emit;
 mod symbol_table;
 
-pub unsafe fn gen(decls: Vec<Decl>) {
+pub unsafe fn gen(decls: Vec<Decl>, code_map: &CodeMap) {
     let mut context = context::Context::new();
     context.declare_printf_scanf();
     for i in decls {
-        i.emit(&mut context).expect("Cannot emit this");
+        let writer = StandardStream::stderr(ColorChoice::Always);
+        match i.emit(&mut context) {
+            Err((msg, span)) => {
+                let diagnostic = Diagnostic::new_error(msg);
+                let label = Label::new_primary(span);
+                emit(writer, &code_map, &diagnostic.with_label(label));
+                panic!("Paro");
+            }
+            _ => {}
+        }
     }
     LLVMPrintModuleToFile(
         context.module,

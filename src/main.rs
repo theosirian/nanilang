@@ -61,7 +61,7 @@ fn main() {
     unsafe {
         let mut erros = vec![];
         match grammar::ProgramParser::new().parse(&mut erros, &file.src()) {
-            Ok(expr) => gen::gen(expr),
+            Ok(expr) => gen::gen(expr, &code_map),
             Err(err) => match err {
                 ParseError::UnrecognizedToken { token, expected } => {
                     let (start, token, end) = match token {
