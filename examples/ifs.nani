@@ -1,8 +1,8 @@
 def main(): int {
-  let x = true: bool;
+  var x = true: bool;
   
   if (x == true) {
-    let i: int;
+    var i: int;
     read i;
     write i + 10;
   } else {
@@ -11,3 +11,4 @@ def main(): int {
 
   return 0;
 }
+

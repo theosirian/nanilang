@@ -1,0 +1,4 @@
+def main(): int {
+  var i: int;
+  i = "1";
+}
