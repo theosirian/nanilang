@@ -406,8 +406,17 @@ impl Emit<(*mut LLVMValue, Type)> for Expr {
                 }
 
                 LLVMPositionBuilderAtEnd(context.builder, block_merge);
-                let phi = LLVMBuildPhi(builder, type_of_truehs.emit(context)?, as_str!("phi_result"));
-                LLVMAddIncoming(phi, [truehs, falsehs].as_mut_ptr(), [block_truehs, block_falsehs].as_mut_ptr(), 2);
+                let phi = LLVMBuildPhi(
+                    builder,
+                    type_of_truehs.emit(context)?,
+                    as_str!("phi_result"),
+                );
+                LLVMAddIncoming(
+                    phi,
+                    [truehs, falsehs].as_mut_ptr(),
+                    [block_truehs, block_falsehs].as_mut_ptr(),
+                    2,
+                );
 
                 Ok((phi, type_of_truehs))
             }
@@ -914,7 +923,7 @@ impl Emit<()> for Decl {
                     identifier,
                     type_of,
                     size,
-                    _list_expression,
+                    list_expression,
                     location,
                 ) => {
                     // TODO Initialize array
@@ -944,7 +953,26 @@ impl Emit<()> for Decl {
                         ));
                     }
 
-                    // TODO Initialization
+                    if let Some(list_expression) = list_expression {
+                        list_expression.iter().enumerate().try_for_each(
+                            |(index, element)| {
+                                Stmt::Attr(
+                                    Variable::Array(
+                                        identifier.to_owned(),
+                                        Box::new(Expr::Number(
+                                            index as u64,
+                                            *location,
+                                        )),
+                                        *location,
+                                    ),
+                                    element.clone(),
+                                    *location,
+                                )
+                                .emit(context)?;
+                                Ok(())
+                            },
+                        )?;
+                    }
 
                     Ok(())
                 }
