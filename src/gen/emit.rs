@@ -21,7 +21,9 @@ impl Emit<*mut LLVMType> for Type {
             Type::Bool => Ok(LLVMInt1TypeInContext(context.context)),
             Type::Void => Ok(LLVMVoidTypeInContext(context.context)),
             Type::Str => panic!("Not implemented"),
-            Type::Agg(_) => panic!("Not implemented"),
+            Type::Agg(type_of) => {
+                Ok(LLVMPointerType(type_of.emit(context)?, 0))
+            }
         }
     }
 }
@@ -36,7 +38,8 @@ impl Emit<(*mut LLVMValue, Type)> for Variable {
             Variable::Single(identifier, location) => {
                 if let Ok(value) = context.symbol_table.get(identifier) {
                     match value {
-                        Symbol::Variable(value, type_of) => {
+                        Symbol::Variable(value, type_of)
+                        | Symbol::Array(value, type_of) => {
                             Ok((*value, type_of.clone()))
                         }
                         _ => Err((
@@ -171,6 +174,12 @@ impl Emit<(*mut LLVMValue, Type)> for Expr {
                     Opcode::Mul => {
                         LLVMBuildMul(builder, lhs, rhs, as_str!("mul_result"))
                     }
+                    Opcode::And => {
+                        LLVMBuildAnd(builder, lhs, rhs, as_str!("and_result"))
+                    }
+                    Opcode::Or => {
+                        LLVMBuildOr(builder, lhs, rhs, as_str!("or_result"))
+                    }
                     Opcode::Mod => panic!("Não encontrei a chamada do modulo"),
                     Opcode::Lesser
                     | Opcode::LesserOrEqual
@@ -271,8 +280,9 @@ impl Emit<()> for Stmt {
                 LLVMBuildBr(context.builder, block_predicate);
 
                 LLVMPositionBuilderAtEnd(context.builder, block_predicate);
-                let (predicate, type_of_predicate) =
-                    predicate.emit(context).unwrap();
+
+                let (predicate, type_of_predicate) = predicate.emit(context)?;
+
                 LLVMBuildCondBr(
                     context.builder,
                     predicate,
@@ -321,9 +331,9 @@ impl Emit<()> for Stmt {
 
                 LLVMBuildBr(context.builder, block_predicate);
 
+                LLVMPositionBuilderAtEnd(context.builder, block_predicate);
                 let (predicate, type_of_predicate) =
                     predicate.emit(context).unwrap();
-                LLVMPositionBuilderAtEnd(context.builder, block_predicate);
                 LLVMBuildCondBr(
                     context.builder,
                     predicate,
@@ -531,6 +541,32 @@ impl Emit<()> for Stmt {
 
                 Ok(())
             }
+            Stmt::Read(variable, location) => {
+                let format_int = LLVMBuildGlobalStringPtr(
+                    context.builder,
+                    as_str!("%d"),
+                    as_str!("format_int"),
+                );
+
+                let scanf_fn = match context.symbol_table.get("0scanf").unwrap()
+                {
+                    Symbol::Func(value, _type_of) => value,
+                    _ => panic!("What"),
+                };
+
+                let (variable_ptr, type_of) =
+                    variable.emit(&mut context.clone())?;
+
+                LLVMBuildCall(
+                    context.builder,
+                    *scanf_fn,
+                    vec![format_int, variable_ptr].as_mut_ptr(),
+                    1,
+                    as_str!("call_read"),
+                );
+
+                Ok(())
+            }
             _ => panic!("Not implemented"),
         }
     }
@@ -642,10 +678,22 @@ impl Emit<()> for Decl {
                         expression_size,
                         as_str!(identifier),
                     );
-                    context
+                    if context
                         .symbol_table
-                        .set(identifier, Symbol::Array(ptr_vlr, type_of.clone()))
-                        .expect("Can't set the variable, probably the variable is already declared");
+                        .set(
+                            identifier,
+                            Symbol::Array(ptr_vlr, type_of.clone()),
+                        )
+                        .is_err()
+                    {
+                        return Err((
+                            format!(
+                                "Identifier {} already declared",
+                                identifier
+                            ),
+                            *location,
+                        ));
+                    }
 
                     // TODO Initialization
 
@@ -663,13 +711,22 @@ impl Emit<()> for Decl {
                         as_str!(identifier),
                     );
 
-                    context
+                    if context
                         .symbol_table
                         .set(
                             identifier,
                             Symbol::Variable(decl, type_of.clone()),
                         )
-                        .unwrap();
+                        .is_err()
+                    {
+                        return Err((
+                            format!(
+                                "Identifier {} already declared",
+                                identifier
+                            ),
+                            *location,
+                        ));
+                    }
 
                     if let Some(expression) = expression {
                         let (value, type_of) =
@@ -698,10 +755,19 @@ impl Emit<()> for Decl {
                         as_str!(identifier),
                     );
 
-                    context
+                    if context
                         .symbol_table
                         .set(identifier, Symbol::Array(decl, type_of.clone()))
-                        .unwrap();
+                        .is_err()
+                    {
+                        return Err((
+                            format!(
+                                "Identifier {} already declared",
+                                identifier
+                            ),
+                            *location,
+                        ));
+                    }
 
                     // TODO Initialization
 
@@ -714,6 +780,7 @@ impl Emit<()> for Decl {
                     block,
                     location,
                 ) => {
+                    dbg!(vec_params);
                     let vec_params = vec_params.clone().unwrap_or_default();
 
                     let mut args = vec_params
@@ -744,7 +811,7 @@ impl Emit<()> for Decl {
                         function_type,
                     );
 
-                    context
+                    if context
                         .symbol_table
                         .set(
                             identifier,
@@ -754,23 +821,24 @@ impl Emit<()> for Decl {
                                     return_type.clone().unwrap_or_default(),
                                     vec_params
                                         .iter()
-                                        .map(|param| match param {
-                                            FuncParam::Single(
-                                                _,
-                                                type_of,
-                                                _,
-                                            ) => type_of.clone(),
-                                            FuncParam::Array(_, type_of, _) => {
-                                                Type::Agg(Box::new(
-                                                    type_of.clone(),
-                                                ))
-                                            }
+                                        .map(|param| match param { 
+                                            FuncParam::Single( _, type_of, _,)
+                                            | FuncParam::Array(_, type_of, _) => type_of.clone(),
                                         })
                                         .collect::<Vec<_>>(),
                                 ),
                             ),
                         )
-                        .unwrap();
+                        .is_err()
+                    {
+                        return Err((
+                            format!(
+                                "Identifier {} already declared",
+                                identifier
+                            ),
+                            *location,
+                        ));
+                    }
 
                     let entry_block = LLVMAppendBasicBlockInContext(
                         context.context,
@@ -788,7 +856,11 @@ impl Emit<()> for Decl {
                             LLVMGetParam(function, index as u32);
 
                         match param {
-                            FuncParam::Single(identifier, type_of, location) => {
+                            FuncParam::Single(
+                                identifier,
+                                type_of,
+                                location,
+                            ) => {
                                 let ptr_vlr = LLVMBuildAlloca(
                                     context.builder,
                                     type_of.emit(context).unwrap(),
@@ -796,8 +868,14 @@ impl Emit<()> for Decl {
                                 );
                                 context
                                     .symbol_table
-                                    .set(&identifier, Symbol::Variable(ptr_vlr, type_of.clone()))
-                                    .expect("Can't set the variable, probably the variable is already declared");
+                                    .set(
+                                        &identifier,
+                                        Symbol::Variable(
+                                            ptr_vlr,
+                                            type_of.clone(),
+                                        ),
+                                    )
+                                    .unwrap();
 
                                 LLVMBuildStore(
                                     context.builder,
@@ -805,8 +883,25 @@ impl Emit<()> for Decl {
                                     ptr_vlr,
                                 );
                             }
-                            FuncParam::Array(_identifier, _type_of, location) => {
-                                panic!("Not implemented yet")
+                            FuncParam::Array(identifier, type_of, location) => {
+                                let ptr_vlr = LLVMBuildAlloca(
+                                    context.builder,
+                                    type_of.emit(context).unwrap(),
+                                    as_str!(identifier),
+                                );
+                                context
+                                    .symbol_table
+                                    .set(
+                                        &identifier,
+                                        Symbol::Array(ptr_vlr, type_of.clone()),
+                                    )
+                                    .unwrap();
+
+                                LLVMBuildStore(
+                                    context.builder,
+                                    function_param,
+                                    ptr_vlr,
+                                );
                             }
                         }
                     });
@@ -814,6 +909,10 @@ impl Emit<()> for Decl {
                     block.emit(context).unwrap();
 
                     context.symbol_table.kill_scope();
+
+                    if !return_type.is_some() {
+                        LLVMBuildRetVoid(context.builder);
+                    }
 
                     context.actual_function = None;
                     Ok(())

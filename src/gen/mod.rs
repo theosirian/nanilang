@@ -21,7 +21,6 @@ pub unsafe fn gen(decls: Vec<Decl>) {
     for i in decls {
         i.emit(&mut context).expect("Cannot emit this");
     }
-    LLVMDumpModule(context.module);
     LLVMPrintModuleToFile(
         context.module,
         as_str!("test.ll"),

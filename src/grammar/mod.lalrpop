@@ -282,7 +282,7 @@ FuncDecl: Decl = <l:@L> DEF <i:Id> OPEN_PARENS <p:SemiColon<(<ParamDeclList> COL
                 if let Some((identifier, location)) = declaration.0 { // If either is fullfiled in the left is a single variable
                     parameters_vector.push(FuncParam::Single(identifier, type_of.clone(), location));
                 } else if let Some((identifier, location)) = declaration.1 { // Else if is fullfiled in the right side is an array
-                    parameters_vector.push(FuncParam::Array(identifier, type_of.clone(), location));
+                    parameters_vector.push(FuncParam::Array(identifier, Type::Agg(Box::new(type_of.clone())), location));
                 }
             }
         }
