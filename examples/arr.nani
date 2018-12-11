@@ -1,16 +1,24 @@
-let i[2] = { 1, 2 }: int;
-let j[2] = { false, true }: bool;
+let i[2] : int;
+let j[2] : bool;
 
 def array_with_expr_index() {
-  let i[3] = { 3, 4, 5 }: int;
-  let k: int;
+  let i[3] : int;
+  let k = 0: int;
+
+  i[0] = 3;
+  i[1] = 4;
+  i[2] = 5;
   write i[k], i[k + 1];
-  return;
 }
 
 def main(): int {
-  let i[2] = { 3, 4 }: int;
-  let j[2] = { false, true }: bool;
+  let i[2]: int;
+  let j[2] : bool;
+  i[0] = 3;
+  i[1] = 4;
+
+  j[0] = false;
+  j[1] = true;
 
   write i[0], i[1];
   write j[0], j[1];
