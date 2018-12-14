@@ -1,13 +1,15 @@
+use super::super::ast::Type;
 use std::collections::{HashMap, LinkedList};
 
 use llvm::prelude::*;
 
+// TODO Should store the type
 #[derive(Clone, Debug)]
 pub enum Symbol {
-    Variable(LLVMValueRef),
-    Array(u32, LLVMValueRef),
-    ArrayRef(LLVMValueRef),
-    Func(String),
+    Variable(LLVMValueRef, Type),
+    Array(LLVMValueRef, Type),
+    JumpBlock(LLVMBasicBlockRef),
+    Func(LLVMValueRef, (Type, Vec<Type>)), // TODO Should store tha function value and signature
 }
 
 #[derive(Clone, Debug)]
@@ -45,8 +47,17 @@ impl SymbolTable {
 
     /// This function only set a identifier in the scope, possibly it will
     /// overwrite the value thats is current in the actual scope
-    pub fn set(self: &mut Self, identifier: &str, symbol: Symbol) {
+    pub fn set(
+        self: &mut Self,
+        identifier: &str,
+        symbol: Symbol,
+    ) -> Result<(), ()> {
         let front = self.list.front_mut().unwrap();
-        front.insert(identifier.to_string(), symbol);
+        if front.get(identifier).is_some() {
+            Err(())
+        } else {
+            front.insert(identifier.to_string(), symbol);
+            Ok(())
+        }
     }
 }

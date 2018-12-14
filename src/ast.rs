@@ -1,6 +1,10 @@
 use llvm::LLVMIntPredicate;
 use std::fmt;
 
+use codespan::{ByteIndex, Span};
+
+pub type Location = Span<ByteIndex>;
+
 #[macro_export]
 macro_rules! flatten {
     ($v:ident) => {
@@ -24,14 +28,15 @@ fn get_tabs(f: &fmt::Formatter) -> (usize, String) {
 
 #[derive(Clone, PartialEq)]
 pub enum Expr {
-    Number(u64),
-    Variable(Variable),
-    True,
-    False,
-    Call(String, Option<Vec<Box<Expr>>>),
-    Op(Box<Expr>, Opcode, Box<Expr>),
-    Right(Opcode, Box<Expr>),
-    Ternary(Box<Expr>, Box<Expr>, Box<Expr>),
+    Number(u64, Location),
+    StringLitteral(String, Location),
+    Variable(Variable, Location),
+    True(Location),
+    False(Location),
+    Call(String, Option<Vec<Box<Expr>>>, Location),
+    Op(Box<Expr>, Opcode, Box<Expr>, Location),
+    Right(Opcode, Box<Expr>, Location),
+    Ternary(Box<Expr>, Box<Expr>, Box<Expr>, Location),
 }
 
 #[derive(Clone, PartialEq)]
@@ -66,48 +71,68 @@ pub enum Type {
     Int,
     Bool,
     Str,
+    Void,
+    Agg(Box<Type>),
+}
+
+impl Default for Type {
+    fn default() -> Type {
+        Type::Void
+    }
 }
 
 #[derive(Clone, PartialEq)]
 pub enum Variable {
-    Single(String),
-    Array(String, Box<Expr>),
+    Single(String, Location),
+    Array(String, Box<Expr>, Location),
 }
 
-#[derive(PartialEq)]
+#[derive(Clone, PartialEq)]
 pub enum Decl {
-    Single(String, Type, Option<Box<Expr>>),
-    Array(String, Type, u64, Option<Vec<Box<Expr>>>),
-    Func(String, Option<Type>, Option<Vec<FuncParam>>, Block),
+    Single(String, Type, Option<Box<Expr>>, Location),
+    Array(String, Type, u64, Option<Vec<Box<Expr>>>, Location),
+    Func(
+        String,
+        Option<Type>,
+        Option<Vec<FuncParam>>,
+        Block,
+        Location,
+    ),
 }
 
-#[derive(PartialEq)]
+#[derive(Clone, PartialEq)]
 pub enum FuncParam {
-    Single(String, Type),
-    Array(String, Type),
+    Single(String, Type, Location),
+    Array(String, Type, Location),
 }
 
-#[derive(PartialEq)]
+#[derive(Clone, PartialEq)]
 pub enum Stmt {
-    Attr(Variable, Box<Expr>),
-    Stop,
-    Skip,
-    Return(Option<Box<Expr>>),
-    Read(Variable),
-    Write(Vec<Box<Expr>>),
-    Call(String, Option<Vec<Box<Expr>>>),
-    If(Box<Expr>, Block, Vec<(Box<Expr>, Block)>, Option<Block>),
-    While(Box<Expr>, Block),
-    For(Box<Stmt>, Box<Expr>, Box<Stmt>, Block),
+    Attr(Variable, Box<Expr>, Location),
+    Stop(Location),
+    Skip(Location),
+    Return(Option<Box<Expr>>, Location),
+    Read(Variable, Location),
+    Write(Vec<Box<Expr>>, Location),
+    Call(String, Option<Vec<Box<Expr>>>, Location),
+    If(
+        Box<Expr>,
+        Block,
+        Vec<(Box<Expr>, Block)>,
+        Option<Block>,
+        Location,
+    ),
+    While(Box<Expr>, Block, Location),
+    For(Box<Stmt>, Box<Expr>, Box<Stmt>, Block, Location),
 }
 
-#[derive(PartialEq)]
+#[derive(Clone, PartialEq)]
 pub enum Either<A, B> {
     Left(A),
     Right(B),
 }
 
-#[derive(PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct Block {
     pub decl: Vec<Decl>,
     pub commands: Vec<Either<Stmt, Block>>,
@@ -117,26 +142,29 @@ impl fmt::Debug for Expr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let (width, tabs) = get_tabs(f);
         match self {
-            Expr::Number(i) => write!(f, "${:?}", i),
-            Expr::Variable(v) => {
+            Expr::Number(i, _) => write!(f, "${:?}", i),
+            Expr::StringLitteral(s, _) => write!(f, "${:?}", s),
+            Expr::Variable(v, _) => {
                 write!(f, "{tabs}{:width$?}", v, tabs = tabs, width = width + 1)
             }
-            Expr::True => write!(f, "$true"),
-            Expr::False => write!(f, "$false"),
+            Expr::True(_) => write!(f, "$true"),
+            Expr::False(_) => write!(f, "$false"),
 
-            Expr::Call(fun, Some(p)) => write!(
+            Expr::Call(fun, Some(p), _) => write!(
                 f,
                 "(Call {:width$?} with params {:?})",
                 fun,
                 p,
                 width = width + 1
             ),
-            Expr::Call(fun, _) => {
+            Expr::Call(fun, _, _) => {
                 write!(f, "(Call {:width$?})", fun, width = width + 1)
             }
 
-            Expr::Op(l, o, r) => write!(f, "({:?} of {:?} and {:?})", o, l, r,),
-            Expr::Right(o, e) => write!(
+            Expr::Op(l, o, r, _) => {
+                write!(f, "({:?} of {:?} and {:?})", o, l, r,)
+            }
+            Expr::Right(o, e, _) => write!(
                 f,
                 "{tabs}({:width$?} of {:width$?})",
                 o,
@@ -144,7 +172,7 @@ impl fmt::Debug for Expr {
                 tabs = tabs,
                 width = width + 1
             ),
-            Expr::Ternary(c, t, _f) => write!(
+            Expr::Ternary(c, t, _f, _) => write!(
                 f,
                 "{tabs}(If {:?} Then {:?} Else {:?})",
                 c,
@@ -198,6 +226,8 @@ impl fmt::Debug for Type {
             Type::Int => write!(f, "Int"),
             Type::Bool => write!(f, "Bool"),
             Type::Str => write!(f, "Str"),
+            Type::Void => write!(f, "Void"),
+            Type::Agg(type_of) => write!(f, "Agg({:?})", *type_of),
         }
     }
 }
@@ -205,8 +235,10 @@ impl fmt::Debug for Type {
 impl fmt::Debug for Variable {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Variable::Single(i) => write!(f, "(Var {:?})", i),
-            Variable::Array(i, s) => write!(f, "(Arr {:?} at pos {:?})", i, s),
+            Variable::Single(i, _) => write!(f, "(Var {:?})", i),
+            Variable::Array(i, s, _) => {
+                write!(f, "(Arr {:?} at pos {:?})", i, s)
+            }
         }
     }
 }
@@ -215,7 +247,7 @@ impl fmt::Debug for Decl {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let (width, tabs) = get_tabs(f);
         match self {
-            Decl::Single(i, t, Some(e)) => write!(
+            Decl::Single(i, t, Some(e), _) => write!(
                 f,
                 "{tabs}({:width$?} of type {:width$?} with value {:width$?})",
                 i,
@@ -225,7 +257,7 @@ impl fmt::Debug for Decl {
                 width = width + 1
             ),
 
-            Decl::Single(i, t, _) => write!(
+            Decl::Single(i, t, _, _) => write!(
                 f,
                 "{tabs}({:width$?} of type {:width$?})",
                 i,
@@ -234,7 +266,7 @@ impl fmt::Debug for Decl {
                 width = width + 1
             ),
 
-            Decl::Array(i, t, s, Some(e)) => write!(
+            Decl::Array(i, t, s, Some(e), _) => write!(
                 f,
                 "{tabs}([{:width$?}] of size {:width$?} of type {:width$?} with values {:width$?})",
                 i,
@@ -245,7 +277,7 @@ impl fmt::Debug for Decl {
                 width = width + 1
             ),
 
-            Decl::Array(i, t, s, _) => write!(
+            Decl::Array(i, t, s, _, _) => write!(
                 f,
                 "{tabs}([{:width$?}] of size {:width$?} of type {:width$?})",
                 i,
@@ -255,7 +287,7 @@ impl fmt::Debug for Decl {
                 width = width + 1
             ),
 
-            Decl::Func(i, Some(t), Some(p), b) => write!(
+            Decl::Func(i, Some(t), Some(p), b, _) => write!(
                 f,
                 "{tabs}(func {:?}\n      {tabs}with params ({:?})\n      {tabs}returning ({:width$?})\n      {tabs}executing (\n{:width$?}\n   {tabs}))",
                 i,
@@ -266,7 +298,7 @@ impl fmt::Debug for Decl {
                 width = width + 3
             ),
 
-            Decl::Func(i, Some(t), _, b) => write!(
+            Decl::Func(i, Some(t), _, b, _) => write!(
                 f,
                 "{tabs}(func {:?} with no params\n      {tabs}returning ({:width$?})\n      {tabs}executing (\n{:width$?})\n   {tabs})",
                 i,
@@ -276,7 +308,7 @@ impl fmt::Debug for Decl {
                 width = width + 3
             ),
 
-            Decl::Func(i, _, Some(p), b) => write!(
+            Decl::Func(i, _, Some(p), b, _) => write!(
                 f,
                 "{tabs}(proc {:?}\n      {tabs}with params ({:?})\n      {tabs}executing (\n{:width$?})\n   {tabs})",
                 i,
@@ -286,7 +318,7 @@ impl fmt::Debug for Decl {
                 width = width + 3
             ),
 
-            Decl::Func(i, _, _, b) => write!(
+            Decl::Func(i, _, _, b, _) => write!(
                 f,
                 "{tabs}(proc {:?} with no params executing (\n{:width$?})\n   {tabs})",
                 i,
@@ -302,7 +334,7 @@ impl fmt::Debug for FuncParam {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let (width, tabs) = get_tabs(f);
         match self {
-            FuncParam::Single(i, t) => write!(
+            FuncParam::Single(i, t, _) => write!(
                 f,
                 "{tabs}(Param {:width$?}, {:width$?})",
                 i,
@@ -310,7 +342,7 @@ impl fmt::Debug for FuncParam {
                 tabs = tabs,
                 width = width + 1
             ),
-            FuncParam::Array(i, t) => write!(
+            FuncParam::Array(i, t, _) => write!(
                 f,
                 "{tabs}(Param {:width$?}[], {:width$?})",
                 i,
@@ -326,38 +358,38 @@ impl fmt::Debug for Stmt {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let (width, tabs) = get_tabs(f);
         match self {
-            Stmt::Attr(v, e) => write!(
+            Stmt::Attr(v, e, _) => write!(
                 f,
                 "(Attr {:?} receives {:?})",
                 v,
                 e,
                 ),
 
-            Stmt::Stop => write!(f, "Stop"),
-            Stmt::Skip => write!(f, "Skip"),
+            Stmt::Stop(_) => write!(f, "Stop"),
+            Stmt::Skip(_) => write!(f, "Skip"),
 
-            Stmt::Return(Some(a)) => {
+            Stmt::Return(Some(a), _) => {
                 write!(f, "(Return {:?})", a)
             }
-            Stmt::Return(_) => write!(f, "Return"),
+            Stmt::Return(_, _) => write!(f, "Return"),
 
-            Stmt::Read(v) => write!(f, "(Read {:?})", v),
-            Stmt::Write(v) => write!(f, "(Write {:?})", v),
+            Stmt::Read(v, _) => write!(f, "(Read {:?})", v),
+            Stmt::Write(v, _) => write!(f, "(Write {:?})", v),
 
-            Stmt::Call(fun, Some(p)) => write!(
+            Stmt::Call(fun, Some(p), _) => write!(
                 f,
                 "(Call {:width$?} with params {:?})",
                 fun,
                 p,
                 width = width + 1
             ),
-            Stmt::Call(fun, _) => {
+            Stmt::Call(fun, _, _) => {
                 write!(f, "(Call {:width$?})", fun, width = width + 1)
             }
 
-            Stmt::If(expr, b, _elif, _else) => {
+            Stmt::If(expr, b, _elif, _else, _) => {
                 write!( f, "(If {:?} then (\n{:width$?})", expr, b, width = width + 1)?;
-                if _elif.len() == 0 {
+                if _elif.is_empty() {
                     write!(f, " no elseifs")?;
                 } else {
                     write!(f, " elseifs [")?;
@@ -374,7 +406,7 @@ impl fmt::Debug for Stmt {
                 }
             },
 
-            Stmt::While(e, b) => write!(
+            Stmt::While(e, b, _) => write!(
                 f,
                 "(While {:?} do(\n{:width$?}\n{tabs}))",
                 e,
@@ -382,7 +414,7 @@ impl fmt::Debug for Stmt {
                 tabs = tabs,
                 width = width + 1
             ),
-            Stmt::For(i, t, s, b) => {
+            Stmt::For(i, t, s, b, _) => {
                 write!(
                     f,
                     "(For\n   {tabs}with init {:?}\n   {tabs}and with test {:?}\n   {tabs}and with step {:?}\n   {tabs}then do(\n{:width$?}\n{tabs}))",
@@ -423,7 +455,7 @@ impl fmt::Debug for Block {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let (width, tabs) = get_tabs(f);
         write!(f, "{tabs}(Block", tabs = tabs)?;
-        if self.decl.len() == 0 {
+        if self.decl.is_empty() {
             write!(f, "\n   {tabs}with no decls", tabs = tabs)?;
         } else {
             write!(f, "\n   {tabs}with decls [", tabs = tabs)?;
@@ -438,7 +470,7 @@ impl fmt::Debug for Block {
             }
             write!(f, "\n   {tabs}]", tabs = tabs)?;
         }
-        if self.commands.len() == 0 {
+        if self.commands.is_empty() {
             write!(f, " and with no commands\n{tabs})", tabs = tabs)
         } else {
             write!(f, " and with commands [")?;
